@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Asset Compass | 資産管理</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Noto+Sans+JP:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="funds.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand"><span class="brand-mark">◒</span><span>asset compass</span></div>
+        <nav aria-label="メインメニュー">
+          <button class="nav-item active" data-view="dashboard"><span>◫</span>ダッシュボード</button>
+          <button class="nav-item" data-view="holdings"><span>▤</span>保有資産</button>
+          <button class="nav-item" data-view="accounts"><span>◌</span>証券口座</button>
+        </nav>
+        <div class="sidebar-foot">
+          <p>価格データ</p><strong>Yahoo Finance</strong>
+          <small>更新は登録銘柄ごとに実行します</small>
+        </div>
+      </aside>
+
+      <main>
+        <header>
+          <div><p class="eyebrow" id="today"></p><h1 id="page-title">資産の全体像</h1></div>
+          <button id="refresh-all" class="button primary">↻ <span>価格を更新</span></button>
+        </header>
+
+        <section id="dashboard-view" class="view active">
+          <div class="status-line"><span id="quote-status">登録済みの銘柄はありません</span><span class="dot">•</span><span>すべて日本円換算</span></div>
+          <div class="metrics">
+            <article class="metric total"><p>総資産評価額</p><strong id="total-value">¥0</strong><span id="total-cost">取得額 ¥0</span></article>
+            <article class="metric"><p>評価損益</p><strong id="total-gain">¥0</strong><span id="total-gain-rate">—</span></article>
+            <article class="metric"><p>本日の変動</p><strong id="day-gain">¥0</strong><span id="day-gain-rate">—</span></article>
+          </div>
+          <div class="grid-two">
+            <section class="panel"><div class="panel-heading"><div><p class="eyebrow">ALLOCATION</p><h2>資産配分</h2></div><span id="asset-count" class="muted"></span></div><div id="allocation" class="allocation empty-state">保有資産を追加すると配分を表示します</div></section>
+            <section class="panel"><div class="panel-heading"><div><p class="eyebrow">ACCOUNTS</p><h2>口座別サマリー</h2></div><button class="text-button" data-go="accounts">編集</button></div><div id="account-summary" class="account-summary empty-state">証券口座を追加してください</div></section>
+          </div>
+          <section class="panel"><div class="panel-heading"><div><p class="eyebrow">HOLDINGS</p><h2>保有資産</h2></div><button class="text-button" data-go="holdings">すべて見る →</button></div><div id="dashboard-holdings"></div></section>
+        </section>
+
+        <section id="holdings-view" class="view">
+          <div class="toolbar"><div class="filters"><select id="filter-account"><option value="all">すべての口座</option></select><select id="filter-type"><option value="all">すべての資産</option><option value="日本株">日本株</option><option value="米国株">米国株</option><option value="投資信託">投資信託</option></select></div><button class="button primary" id="add-holding">＋ 保有資産を追加</button></div>
+          <section class="panel table-panel"><div id="holdings-table"></div></section>
+          <p class="hint">ヒント：日本株は <code>7203.T</code>、米国株は <code>AAPL</code>、投資信託は <code>03311187</code> のような8桁の投信コードを入力します。</p>
+        </section>
+
+        <section id="accounts-view" class="view">
+          <div class="toolbar"><div><p class="eyebrow">YOUR BROKERAGES</p><h2>証券口座</h2></div><button class="button primary" id="add-account">＋ 口座を追加</button></div>
+          <div id="accounts-list" class="account-cards"></div>
+        </section>
+      </main>
+    </div>
+
+    <dialog id="holding-dialog"><form id="holding-form" method="dialog" class="dialog-card"><div class="dialog-heading"><div><p class="eyebrow" id="holding-form-kicker">NEW HOLDING</p><h2 id="holding-dialog-title">保有資産を追加</h2></div><button type="button" class="close" data-close="holding-dialog">×</button></div><input type="hidden" id="holding-id" /><label>証券口座<select id="holding-account" required></select></label><div class="form-row"><label>資産区分<select id="holding-type" required><option>日本株</option><option>米国株</option><option>投資信託</option></select></label><label>通貨<select id="holding-currency" required><option value="JPY">JPY</option><option value="USD">USD</option></select></label></div><label>銘柄名<input id="holding-name" placeholder="例：トヨタ自動車" required /></label><label>Yahoo Finance ティッカー<input id="holding-symbol" placeholder="例：7203.T / AAPL" required autocapitalize="characters" /><small>このティッカーで価格を自動取得します</small></label><div class="form-row"><label><span id="quantity-label">保有数量</span><input id="holding-quantity" type="number" min="0.0001" step="any" placeholder="100" required /></label><label><span id="cost-label">取得単価</span><input id="holding-cost" type="number" min="0" step="any" placeholder="2500" required /></label></div><p id="fund-unit-note" class="fund-unit-note" hidden>投資信託の基準価額・取得基準価額は、常に <strong>1万口あたり</strong> で入力・計算します。</p><div class="dialog-actions"><button type="button" class="button ghost" data-close="holding-dialog">キャンセル</button><button class="button primary" value="default">保存する</button></div></form></dialog>
+
+    <dialog id="account-dialog"><form id="account-form" method="dialog" class="dialog-card small-dialog"><div class="dialog-heading"><div><p class="eyebrow" id="account-form-kicker">NEW ACCOUNT</p><h2 id="account-dialog-title">証券口座を追加</h2></div><button type="button" class="close" data-close="account-dialog">×</button></div><input type="hidden" id="account-id" /><label>口座名<input id="account-name" placeholder="例：SBI証券" required /></label><label>メモ（任意）<input id="account-note" placeholder="例：NISA / 特定口座" /></label><div class="dialog-actions"><button type="button" class="button ghost" data-close="account-dialog">キャンセル</button><button class="button primary" value="default">保存する</button></div></form></dialog>
+    <script src="app.js?v=20260918-3"></script>
+  </body>
+</html>
