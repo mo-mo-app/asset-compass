@@ -15,9 +15,10 @@ async function quote(symbol) {
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=5d&interval=1d`;
   const response = await fetch(url, {headers:{"User-Agent":"AssetCompass/1.0"}});
   if (!response.ok) throw new Error(`Yahoo Finance returned ${response.status}`);
-  const meta = (await response.json()).chart?.result?.[0]?.meta;
+  const result = (await response.json()).chart?.result?.[0];
+  const meta = result?.meta;
   if (!Number.isFinite(meta?.regularMarketPrice)) throw new Error("Quote unavailable");
-  return {price:meta.regularMarketPrice,previousClose:meta.chartPreviousClose || meta.previousClose || meta.regularMarketPrice};
+  return {price:meta.regularMarketPrice,previousClose:meta.chartPreviousClose || meta.previousClose || meta.regularMarketPrice,priceTimestamp:Number.isFinite(meta.regularMarketTime) ? meta.regularMarketTime * 1000 : null};
 }
 async function stockName(symbol) {
   if (!/^[A-Z0-9.=^\-]+$/i.test(symbol)) throw new Error("Invalid symbol");
@@ -37,9 +38,12 @@ async function fundQuote(code) {
   const html = await response.text();
   const match = html.match(/_CommonPriceBoard__price_[^>]*>[\s\S]{0,500}?_StyledNumber__value_[^>]*>([\d,]+)/);
   if (!match) throw new Error("投信の基準価額を取得できませんでした");
+  const nearbyText = html.slice(match.index, match.index + 1600).replace(/<[^>]*>/g, " ").replace(/&nbsp;|&#xA0;/gi, " ").replace(/&amp;/g, "&");
+  const dateMatch = nearbyText.match(/(?<!\d)(?:((?:19|20)\d{2})[年\/-])?(\d{1,2})[月\/-](\d{1,2})日?(?!\d)/);
+  const priceDate = dateMatch ? `${dateMatch[2]}/${dateMatch[3]}` : null;
   const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
   const name = titleMatch ? titleMatch[1].replace(/\s*[-｜|]\s*Yahoo!?ファイナンス.*$/i, "").replace(/[【〖][^】〗]*[】〗].*$/, "").replace(/&amp;/g, "&").trim() : null;
-  return {price:Number(match[1].replaceAll(",", "")), previousClose:null, name:name || null};
+  return {price:Number(match[1].replaceAll(",", "")), previousClose:null, name:name || null, priceDate};
 }
 http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://127.0.0.1:${port}`);
