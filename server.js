@@ -1,6 +1,7 @@
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
+const os = require("os");
 const root = __dirname;
 let migration = null;
 const port = 8766;
@@ -45,7 +46,7 @@ async function fundQuote(code) {
   const name = titleMatch ? titleMatch[1].replace(/\s*[-｜|]\s*Yahoo!?ファイナンス.*$/i, "").replace(/[【〖][^】〗]*[】〗].*$/, "").replace(/&amp;/g, "&").trim() : null;
   return {price:Number(match[1].replaceAll(",", "")), previousClose:null, name:name || null, priceDate};
 }
-http.createServer(async (req, res) => {
+const handleRequest = async (req, res) => {
   const url = new URL(req.url, `http://127.0.0.1:${port}`);
   if (req.method === "OPTIONS") return send(res, 204, "", "text/plain");
   if (url.pathname === "/api/name") {
@@ -64,4 +65,29 @@ http.createServer(async (req, res) => {
   const file = path.resolve(root, `.${safePath}`);
   if (!file.startsWith(root) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) return send(res, 404, "Not found", "text/plain");
   send(res, 200, fs.readFileSync(file), contentTypes[path.extname(file)] || "application/octet-stream");
-}).listen(port, "127.0.0.1", () => console.log(`Asset Compass: http://127.0.0.1:${port}`));
+};
+
+function isPrivateIPv4(address) {
+  const parts = address.split(".").map(Number);
+  if (parts.length !== 4 || parts.some(part => !Number.isInteger(part) || part < 0 || part > 255)) return false;
+  return parts[0] === 10 || (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) || (parts[0] === 192 && parts[1] === 168);
+}
+
+const interfaces = os.networkInterfaces();
+const lanAddresses = Object.entries(interfaces)
+  .flatMap(([name, entries]) => (entries || []).map(entry => ({name, ...entry})))
+  .filter(entry => !entry.internal && (entry.family === "IPv4" || entry.family === 4) && isPrivateIPv4(entry.address))
+  .sort((a, b) => Number(!/wi-?fi|wireless|wlan/i.test(a.name)) - Number(!/wi-?fi|wireless|wlan/i.test(b.name)));
+
+function startListener(host, label) {
+  const server = http.createServer(handleRequest);
+  server.on("error", error => console.error(`${label} (${host}) の起動に失敗しました: ${error.message}`));
+  server.listen(port, host, () => console.log(`${label}: http://${host}:${port}`));
+}
+
+startListener("127.0.0.1", "PC内アクセス");
+if (lanAddresses.length) {
+  lanAddresses.forEach((entry, index) => startListener(entry.address, index === 0 ? "同一LANアクセス" : `LANアクセス候補 (${entry.name})`));
+} else {
+  console.log("同一LAN用のプライベートIPv4アドレスが見つかりませんでした。");
+}
