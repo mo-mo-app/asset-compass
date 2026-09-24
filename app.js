@@ -74,6 +74,22 @@ function openHolding(id) {
   const h=data.holdings.find(x=>x.id===id); $("#holding-form").reset(); $("#holding-id").value=id||""; $("#holding-dialog-title").textContent=h?"保有資産を編集":"保有資産を追加"; $("#holding-form-kicker").textContent=h?"EDIT HOLDING":"NEW HOLDING"; $("#holding-account").innerHTML=data.accounts.map(a=>`<option value="${a.id}">${escapeHTML(a.name)}</option>`).join(""); if(h){ $("#holding-account").value=h.accountId; $("#holding-type").value=h.type; $("#holding-currency").value=h.currency; $("#holding-name").value=h.name; $("#holding-symbol").value=h.symbol; $("#holding-quantity").value=h.quantity; $("#holding-cost").value=h.cost; } updateHoldingFormLabels(); $("#holding-dialog").showModal();
 }
 function openAccount(id) { const a=data.accounts.find(x=>x.id===id); $("#account-form").reset(); $("#account-id").value=id||""; $("#account-dialog-title").textContent=a?"証券口座を編集":"証券口座を追加"; $("#account-form-kicker").textContent=a?"EDIT ACCOUNT":"NEW ACCOUNT"; if(a){$("#account-name").value=a.name;$("#account-note").value=a.note} $("#account-dialog").showModal(); }
+async function lookupHoldingName() {
+  const button = $("#lookup-name"), status = $("#name-lookup-status");
+  const symbol = $("#holding-symbol").value.trim().toUpperCase(), type = $("#holding-type").value;
+  if (!symbol) { status.textContent = "先に銘柄コードを入力してください"; return; }
+  button.disabled = true; status.textContent = "取得中…";
+  try {
+    const res = type === "投資信託"
+      ? await fetch(`/api/quote?symbol=${encodeURIComponent(symbol)}&type=${encodeURIComponent(type)}`)
+      : await fetch(`/api/name?symbol=${encodeURIComponent(symbol)}`);
+    const result = await res.json();
+    if (!res.ok) throw new Error(result.error || "銘柄情報を取得できませんでした");
+    if (!result.name) throw new Error("銘柄名を取得できませんでした。銘柄名を手入力してください。");
+    $("#holding-name").value = result.name; status.textContent = "銘柄名を入力しました。必要に応じて修正できます。";
+  } catch (error) { status.textContent = `${error.message} 銘柄名は手入力できます。`; }
+  finally { button.disabled = false; }
+}
 async function updateQuote(h) {
   const symbol = encodeURIComponent(h.symbol.trim().toUpperCase());
   const type = encodeURIComponent(h.type || "");
@@ -91,7 +107,7 @@ async function updateAll() {
 document.addEventListener("click", e => { const nav=e.target.closest(".nav-item"); if(nav){document.querySelectorAll(".nav-item,.view").forEach(x=>x.classList.remove("active"));nav.classList.add("active");$(`#${nav.dataset.view}-view`).classList.add("active");$("#page-title").textContent={dashboard:"資産の全体像",holdings:"保有資産",accounts:"証券口座"}[nav.dataset.view];} const go=e.target.closest("[data-go]");if(go)document.querySelector(`[data-view="${go.dataset.go}"]`).click();if(e.target.id==="add-holding")openHolding();if(e.target.id==="add-account")openAccount();const eh=e.target.closest("[data-edit-holding]");if(eh)openHolding(eh.dataset.editHolding);const ea=e.target.closest("[data-edit-account]");if(ea)openAccount(ea.dataset.editAccount);const close=e.target.closest("[data-close]");if(close)$("#"+close.dataset.close).close(); });
 $("#holding-form").addEventListener("submit", e=>{e.preventDefault();const id=$("#holding-id").value;const h={id:id||crypto.randomUUID(),accountId:$("#holding-account").value,type:$("#holding-type").value,currency:$("#holding-currency").value,name:$("#holding-name").value.trim(),symbol:$("#holding-symbol").value.trim().toUpperCase(),quantity:Number($("#holding-quantity").value),cost:Number($("#holding-cost").value)};const old=data.holdings.findIndex(x=>x.id===id);if(old>=0)data.holdings[old]={...data.holdings[old],...h};else data.holdings.push(h);save();$("#holding-dialog").close();render();});
 $("#account-form").addEventListener("submit",e=>{e.preventDefault();const id=$("#account-id").value,a={id:id||crypto.randomUUID(),name:$("#account-name").value.trim(),note:$("#account-note").value.trim()};const i=data.accounts.findIndex(x=>x.id===id);if(i>=0)data.accounts[i]=a;else data.accounts.push(a);save();$("#account-dialog").close();render();});
-$("#filter-account").addEventListener("change",renderHoldingsTable);$("#filter-type").addEventListener("change",renderHoldingsTable);$("#holding-type").addEventListener("change",updateHoldingFormLabels);$("#refresh-all").addEventListener("click",updateAll);
+$("#filter-account").addEventListener("change",renderHoldingsTable);$("#filter-type").addEventListener("change",renderHoldingsTable);$("#holding-type").addEventListener("change",updateHoldingFormLabels);$("#refresh-all").addEventListener("click",updateAll);$("#lookup-name").addEventListener("click",lookupHoldingName);
 async function boot() {
   // file:// の保存領域と localhost の保存領域は別物。
   // ハッシュはサーバーへ送られないため、保有データを外部送信せずに一度だけ移行できる。

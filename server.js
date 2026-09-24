@@ -19,6 +19,17 @@ async function quote(symbol) {
   if (!Number.isFinite(meta?.regularMarketPrice)) throw new Error("Quote unavailable");
   return {price:meta.regularMarketPrice,previousClose:meta.chartPreviousClose || meta.previousClose || meta.regularMarketPrice};
 }
+async function stockName(symbol) {
+  if (!/^[A-Z0-9.=^\-]+$/i.test(symbol)) throw new Error("Invalid symbol");
+  const response = await fetch(`https://finance.yahoo.co.jp/quote/${encodeURIComponent(symbol)}`, {headers:{"User-Agent":"Mozilla/5.0 (Asset Compass)"}});
+  if (!response.ok) throw new Error("Yahoo!ファイナンスで銘柄コードが見つかりません");
+  const html = await response.text();
+  const title = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1];
+  if (!title) throw new Error("Yahoo!ファイナンスから銘柄名を取得できませんでした");
+  const name = title.replace(/\s*[-｜|]\s*Yahoo!?ファイナンス.*$/i, "").replace(/[【〖][^】〗]*[】〗].*$/, "").replace(/&amp;/g, "&").trim();
+  if (!name) throw new Error("Yahoo!ファイナンスから銘柄名を取得できませんでした");
+  return {name};
+}
 async function fundQuote(code) {
   if (!/^\d{8}$/.test(code)) throw new Error("投信コードは8桁で入力してください");
   const response = await fetch(`https://finance.yahoo.co.jp/quote/${code}`, {headers:{"User-Agent":"Mozilla/5.0 (Asset Compass)"}});
@@ -26,11 +37,17 @@ async function fundQuote(code) {
   const html = await response.text();
   const match = html.match(/_CommonPriceBoard__price_[^>]*>[\s\S]{0,500}?_StyledNumber__value_[^>]*>([\d,]+)/);
   if (!match) throw new Error("投信の基準価額を取得できませんでした");
-  return {price:Number(match[1].replaceAll(",", "")), previousClose:null};
+  const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  const name = titleMatch ? titleMatch[1].replace(/\s*[-｜|]\s*Yahoo!?ファイナンス.*$/i, "").replace(/[【〖][^】〗]*[】〗].*$/, "").replace(/&amp;/g, "&").trim() : null;
+  return {price:Number(match[1].replaceAll(",", "")), previousClose:null, name:name || null};
 }
 http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://127.0.0.1:${port}`);
   if (req.method === "OPTIONS") return send(res, 204, "", "text/plain");
+  if (url.pathname === "/api/name") {
+    try { return send(res, 200, await stockName(url.searchParams.get("symbol") || "")); }
+    catch (error) { return send(res, 502, {error:error.message}); }
+  }
   if (url.pathname === "/api/quote") {
     try { const symbol=url.searchParams.get("symbol") || ""; const type=url.searchParams.get("type"); return send(res, 200, type === "投資信託" ? await fundQuote(symbol) : await quote(symbol)); }
     catch (error) { return send(res, 502, {error:error.message}); }
