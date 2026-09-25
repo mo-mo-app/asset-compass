@@ -10,12 +10,12 @@ db.exec("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA busy_timeou
 
 function runMigrations() {
   const currentVersion = db.prepare("PRAGMA user_version").get().user_version;
-  if (currentVersion > 1) throw new Error(`Database schema version ${currentVersion} is newer than this application supports.`);
-  if (currentVersion === 1) return;
+  if (currentVersion > 3) throw new Error(`Database schema version ${currentVersion} is newer than this application supports.`);
 
-  db.exec("BEGIN IMMEDIATE");
-  try {
-    db.exec(`
+  if (currentVersion === 0) {
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      db.exec(`
       CREATE TABLE app_state (
         singleton_id INTEGER PRIMARY KEY CHECK (singleton_id = 1),
         revision INTEGER NOT NULL DEFAULT 0 CHECK (revision >= 0),
@@ -66,11 +66,72 @@ function runMigrations() {
       INSERT INTO app_state (singleton_id, revision, initialized, last_quote_fetched_at, updated_at)
       VALUES (1, 0, 0, NULL, ${Date.now()});
       PRAGMA user_version = 1;
-    `);
-    db.exec("COMMIT");
-  } catch (error) {
-    db.exec("ROLLBACK");
-    throw error;
+      `);
+      db.exec("COMMIT");
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  if (db.prepare("PRAGMA user_version").get().user_version < 2) {
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      db.exec(`
+        CREATE TABLE daily_asset_snapshots (
+          snapshot_date TEXT PRIMARY KEY CHECK (date(snapshot_date) = snapshot_date),
+          total_value_jpy REAL CHECK (total_value_jpy IS NULL OR total_value_jpy >= 0),
+          usd_jpy_rate REAL CHECK (usd_jpy_rate IS NULL OR usd_jpy_rate > 0),
+          saved_at INTEGER NOT NULL,
+          holding_count INTEGER NOT NULL CHECK (holding_count >= 0),
+          valued_holding_count INTEGER NOT NULL CHECK (valued_holding_count >= 0),
+          unpriced_holding_count INTEGER NOT NULL CHECK (unpriced_holding_count >= 0),
+          quote_failure_count INTEGER NOT NULL CHECK (quote_failure_count >= 0),
+          is_complete INTEGER NOT NULL CHECK (is_complete IN (0, 1))
+        );
+
+        CREATE TABLE daily_account_snapshots (
+          snapshot_date TEXT NOT NULL,
+          account_id TEXT NOT NULL,
+          account_name TEXT NOT NULL,
+          value_jpy REAL CHECK (value_jpy IS NULL OR value_jpy >= 0),
+          holding_count INTEGER NOT NULL CHECK (holding_count >= 0),
+          valued_holding_count INTEGER NOT NULL CHECK (valued_holding_count >= 0),
+          unpriced_holding_count INTEGER NOT NULL CHECK (unpriced_holding_count >= 0),
+          PRIMARY KEY (snapshot_date, account_id),
+          FOREIGN KEY (snapshot_date) REFERENCES daily_asset_snapshots(snapshot_date) ON DELETE CASCADE
+        );
+
+        CREATE INDEX daily_account_snapshots_account_date
+          ON daily_account_snapshots (account_id, snapshot_date);
+
+        PRAGMA user_version = 2;
+      `);
+      db.exec("COMMIT");
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+  if (db.prepare("PRAGMA user_version").get().user_version < 3) {
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      db.exec(`
+        ALTER TABLE holdings ADD COLUMN quote_status TEXT NOT NULL DEFAULT 'unknown'
+          CHECK (quote_status IN ('unknown', 'success', 'failed'));
+        ALTER TABLE holdings ADD COLUMN quote_attempted_at INTEGER
+          CHECK (quote_attempted_at IS NULL OR quote_attempted_at > 0);
+        -- Old previous_close may be a range-start close or a current-price fallback.
+        -- Preserve prices/history, but require a fresh quote before daily comparisons.
+        UPDATE holding_quotes SET previous_close = NULL;
+        PRAGMA user_version = 3;
+      `);
+      db.prepare("UPDATE app_state SET revision = revision + 1, updated_at = ? WHERE initialized = 1").run(Date.now());
+      db.exec("COMMIT");
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
   }
 }
 
@@ -119,7 +180,11 @@ function normalizeState(input) {
     const accountId = requiredText(holding?.accountId, `${field}.accountId`);
     if (!accountIds.has(accountId)) throw new Error(`${field}.accountId does not match an account in this state.`);
     const price = optionalNumber(holding.price, `${field}.price`);
-    const previousClose = optionalNumber(holding.previousClose, `${field}.previousClose`);
+    const quoteStatus = holding.quoteStatus ?? "unknown";
+    if (!["unknown", "success", "failed"].includes(quoteStatus)) throw new Error(`${field}.quoteStatus is invalid.`);
+    const quoteAttemptedAt = optionalTimestamp(holding.quoteAttemptedAt, `${field}.quoteAttemptedAt`);
+    // Legacy clients/cache have no status: their comparison values are unverified.
+    const previousClose = quoteStatus === "unknown" ? null : optionalNumber(holding.previousClose, `${field}.previousClose`, { positive: true });
     const priceDate = holding.priceDate === null || holding.priceDate === undefined || holding.priceDate === ""
       ? null
       : typeof holding.priceDate === "string" && /^\d{1,2}\/\d{1,2}$/.test(holding.priceDate)
@@ -129,7 +194,7 @@ function normalizeState(input) {
       id: requiredText(holding?.id, `${field}.id`), accountId, type, currency,
       name: requiredText(holding?.name, `${field}.name`),
       symbol: requiredText(holding?.symbol, `${field}.symbol`),
-      quantity: holding.quantity, cost: holding.cost, price, previousClose,
+      quantity: holding.quantity, cost: holding.cost, price, previousClose, quoteStatus, quoteAttemptedAt,
       priceTimestamp: optionalTimestamp(holding.priceTimestamp, `${field}.priceTimestamp`),
       priceDate
     };
@@ -152,11 +217,12 @@ function upsertState(data) {
     ON CONFLICT(id) DO UPDATE SET name = excluded.name, note = excluded.note, updated_at = excluded.updated_at
   `);
   const upsertHolding = db.prepare(`
-    INSERT INTO holdings (id, account_id, type, currency, name, symbol, quantity, cost, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO holdings (id, account_id, type, currency, name, symbol, quantity, cost, created_at, updated_at, quote_status, quote_attempted_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET account_id = excluded.account_id, type = excluded.type,
       currency = excluded.currency, name = excluded.name, symbol = excluded.symbol,
-      quantity = excluded.quantity, cost = excluded.cost, updated_at = excluded.updated_at
+      quantity = excluded.quantity, cost = excluded.cost, updated_at = excluded.updated_at,
+      quote_status = excluded.quote_status, quote_attempted_at = excluded.quote_attempted_at
   `);
   const upsertQuote = db.prepare(`
     INSERT INTO holding_quotes (holding_id, price, previous_close, price_timestamp, price_date)
@@ -167,8 +233,9 @@ function upsertState(data) {
 
   for (const account of data.accounts) upsertAccount.run(account.id, account.name, account.note, now, now);
   for (const holding of data.holdings) {
-    upsertHolding.run(holding.id, holding.accountId, holding.type, holding.currency, holding.name, holding.symbol, holding.quantity, holding.cost, now, now);
+    upsertHolding.run(holding.id, holding.accountId, holding.type, holding.currency, holding.name, holding.symbol, holding.quantity, holding.cost, now, now, holding.quoteStatus, holding.quoteAttemptedAt);
     if (holding.price !== null) upsertQuote.run(holding.id, holding.price, holding.previousClose, holding.priceTimestamp, holding.priceDate);
+    else db.prepare("DELETE FROM holding_quotes WHERE holding_id = ?").run(holding.id);
   }
   if (data.usdJpyRate !== null) {
     db.prepare(`
@@ -185,13 +252,14 @@ function getState() {
   const accounts = db.prepare("SELECT id, name, note FROM accounts ORDER BY rowid").all();
   const holdings = db.prepare(`
     SELECT h.id, h.account_id, h.type, h.currency, h.name, h.symbol, h.quantity, h.cost,
-      q.price, q.previous_close, q.price_timestamp, q.price_date
+      q.price, q.previous_close, q.price_timestamp, q.price_date, h.quote_status, h.quote_attempted_at
     FROM holdings h LEFT JOIN holding_quotes q ON q.holding_id = h.id ORDER BY h.rowid
   `).all().map(row => ({
     id: row.id, accountId: row.account_id, type: row.type, currency: row.currency,
     name: row.name, symbol: row.symbol, quantity: row.quantity, cost: row.cost,
     price: row.price ?? null, previousClose: row.previous_close ?? null,
-    priceTimestamp: row.price_timestamp ?? null, priceDate: row.price_date ?? null
+    priceTimestamp: row.price_timestamp ?? null, priceDate: row.price_date ?? null,
+    quoteStatus: row.quote_status, quoteAttemptedAt: row.quote_attempted_at ?? null
   }));
   const fx = db.prepare("SELECT rate, price_timestamp FROM fx_rates WHERE base_currency = 'USD' AND quote_currency = 'JPY'").get();
 
@@ -210,6 +278,48 @@ function getState() {
   };
 }
 
+function getSnapshots(from, to) {
+  const assetRows = db.prepare(`
+    SELECT snapshot_date, total_value_jpy, usd_jpy_rate, saved_at, holding_count,
+      valued_holding_count, unpriced_holding_count, quote_failure_count, is_complete
+    FROM daily_asset_snapshots
+    WHERE snapshot_date >= ? AND snapshot_date <= ?
+    ORDER BY snapshot_date ASC
+  `).all(from, to);
+  const accountRows = db.prepare(`
+    SELECT snapshot_date, account_id, account_name, value_jpy,
+      valued_holding_count, unpriced_holding_count
+    FROM daily_account_snapshots
+    WHERE snapshot_date >= ? AND snapshot_date <= ?
+    ORDER BY snapshot_date ASC, account_id ASC
+  `).all(from, to);
+
+  const accountsByDate = new Map();
+  for (const row of accountRows) {
+    if (!accountsByDate.has(row.snapshot_date)) accountsByDate.set(row.snapshot_date, []);
+    accountsByDate.get(row.snapshot_date).push({
+      accountId: row.account_id,
+      accountName: row.account_name,
+      valueJpy: row.value_jpy ?? null,
+      valuedHoldingCount: row.valued_holding_count,
+      unpricedHoldingCount: row.unpriced_holding_count
+    });
+  }
+
+  return assetRows.map(row => ({
+    date: row.snapshot_date,
+    totalValueJpy: row.total_value_jpy ?? null,
+    usdJpyRate: row.usd_jpy_rate ?? null,
+    savedAt: row.saved_at,
+    holdingCount: row.holding_count,
+    valuedHoldingCount: row.valued_holding_count,
+    unpricedHoldingCount: row.unpriced_holding_count,
+    quoteFailureCount: row.quote_failure_count,
+    isComplete: Boolean(row.is_complete),
+    accounts: accountsByDate.get(row.snapshot_date) || []
+  }));
+}
+
 function inTransaction(action) {
   db.exec("BEGIN IMMEDIATE");
   try {
@@ -220,6 +330,71 @@ function inTransaction(action) {
     db.exec("ROLLBACK");
     throw error;
   }
+}
+
+function jstDate(timestamp) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Tokyo", year: "numeric", month: "2-digit", day: "2-digit"
+  }).formatToParts(new Date(timestamp));
+  const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
+function saveDailySnapshot(data, { quoteFailureCount }) {
+  const savedAt = Date.now();
+  const snapshotDate = jstDate(savedAt);
+  const quantityDivisor = holding => holding.type === "投資信託" ? 10000 : 1;
+  const isValued = holding => holding.price !== null &&
+    (holding.currency !== "USD" || data.usdJpyRate !== null);
+  const valueOf = holding => holding.price * holding.quantity / quantityDivisor(holding) *
+    (holding.currency === "USD" ? data.usdJpyRate : 1);
+  const valuedHoldings = data.holdings.filter(isValued);
+  const unpricedHoldingCount = data.holdings.length - valuedHoldings.length;
+  const totalValue = valuedHoldings.reduce((sum, holding) => sum + valueOf(holding), 0);
+  const isComplete = quoteFailureCount === 0 && unpricedHoldingCount === 0;
+
+  db.prepare(`
+    INSERT INTO daily_asset_snapshots (
+      snapshot_date, total_value_jpy, usd_jpy_rate, saved_at, holding_count,
+      valued_holding_count, unpriced_holding_count, quote_failure_count, is_complete
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(snapshot_date) DO UPDATE SET
+      total_value_jpy = excluded.total_value_jpy,
+      usd_jpy_rate = excluded.usd_jpy_rate,
+      saved_at = excluded.saved_at,
+      holding_count = excluded.holding_count,
+      valued_holding_count = excluded.valued_holding_count,
+      unpriced_holding_count = excluded.unpriced_holding_count,
+      quote_failure_count = excluded.quote_failure_count,
+      is_complete = excluded.is_complete
+  `).run(
+    snapshotDate, valuedHoldings.length ? totalValue : null, data.usdJpyRate,
+    savedAt, data.holdings.length, valuedHoldings.length, unpricedHoldingCount,
+    quoteFailureCount, Number(isComplete)
+  );
+
+  const upsertAccount = db.prepare(`
+    INSERT INTO daily_account_snapshots (
+      snapshot_date, account_id, account_name, value_jpy, holding_count,
+      valued_holding_count, unpriced_holding_count
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(snapshot_date, account_id) DO UPDATE SET
+      account_name = excluded.account_name,
+      value_jpy = excluded.value_jpy,
+      holding_count = excluded.holding_count,
+      valued_holding_count = excluded.valued_holding_count,
+      unpriced_holding_count = excluded.unpriced_holding_count
+  `);
+  for (const account of data.accounts) {
+    const accountHoldings = data.holdings.filter(holding => holding.accountId === account.id);
+    const accountValued = accountHoldings.filter(isValued);
+    const accountTotal = accountValued.reduce((sum, holding) => sum + valueOf(holding), 0);
+    upsertAccount.run(
+      snapshotDate, account.id, account.name, accountValued.length ? accountTotal : null,
+      accountHoldings.length, accountValued.length, accountHoldings.length - accountValued.length
+    );
+  }
+  return { snapshotDate, savedAt, holdingCount: data.holdings.length, valuedHoldingCount: valuedHoldings.length, unpricedHoldingCount, quoteFailureCount, isComplete };
 }
 
 function migrateLocalState(input) {
@@ -233,17 +408,21 @@ function migrateLocalState(input) {
   });
 }
 
-function saveState(expectedRevision, input) {
+function saveState(expectedRevision, input, snapshotMetadata = null) {
   if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0) throw new Error("expectedRevision must be a non-negative integer.");
   const data = normalizeState(input);
+  if (snapshotMetadata !== null && (!Number.isSafeInteger(snapshotMetadata.quoteFailureCount) || snapshotMetadata.quoteFailureCount < 0)) {
+    throw new Error("snapshot.quoteFailureCount must be a non-negative integer.");
+  }
   return inTransaction(() => {
     const current = db.prepare("SELECT revision, initialized FROM app_state WHERE singleton_id = 1").get();
     if (!current.initialized) return { notInitialized: true, state: getState() };
     if (current.revision !== expectedRevision) return { conflict: true, state: getState() };
     upsertState(data);
     db.prepare("UPDATE app_state SET initialized = 1, revision = revision + 1, updated_at = ? WHERE singleton_id = 1").run(Date.now());
-    return { conflict: false, state: getState() };
+    const snapshot = snapshotMetadata === null ? null : saveDailySnapshot(data, snapshotMetadata);
+    return { conflict: false, state: getState(), snapshot };
   });
 }
 
-module.exports = { databasePath, db, getState, migrateLocalState, saveState };
+module.exports = { databasePath, db, getState, getSnapshots, migrateLocalState, saveState };

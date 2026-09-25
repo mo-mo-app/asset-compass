@@ -2,7 +2,8 @@ const http = require("http");
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
-const { getState, migrateLocalState, saveState } = require("./database");
+const { stockQuoteFromChart, fundPreviousClose } = require("./quote-data");
+const { getState, getSnapshots, migrateLocalState, saveState } = require("./database");
 const root = __dirname;
 let migration = null;
 const port = Number(process.env.ASSET_COMPASS_PORT) || 8766;
@@ -44,15 +45,34 @@ function apiError(res, error) {
   const status = error.statusCode || (error.message.startsWith("Request body") ? 400 : 400);
   return send(res, status, { error: error.message });
 }
+function jstToday() {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Tokyo", year: "numeric", month: "2-digit", day: "2-digit"
+  }).formatToParts(new Date());
+  const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
+function shiftDate(date, days) {
+  const shifted = new Date(`${date}T00:00:00Z`);
+  shifted.setUTCDate(shifted.getUTCDate() + days);
+  return shifted.toISOString().slice(0, 10);
+}
+function isValidSnapshotDate(value) {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [year, month, day] = value.split("-").map(Number);
+  if (year < 1 || month < 1 || month > 12 || day < 1 || day > 31) return false;
+  const candidate = new Date(0);
+  candidate.setUTCHours(0, 0, 0, 0);
+  candidate.setUTCFullYear(year, month - 1, day);
+  return candidate.getUTCFullYear() === year && candidate.getUTCMonth() === month - 1 && candidate.getUTCDate() === day;
+}
 async function quote(symbol) {
   if (!/^[A-Z0-9.=^\-]+$/i.test(symbol)) throw new Error("Invalid symbol");
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=5d&interval=1d`;
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=1mo&interval=1d`;
   const response = await fetch(url, {headers:{"User-Agent":"AssetCompass/1.0"}});
   if (!response.ok) throw new Error(`Yahoo Finance returned ${response.status}`);
   const result = (await response.json()).chart?.result?.[0];
-  const meta = result?.meta;
-  if (!Number.isFinite(meta?.regularMarketPrice)) throw new Error("Quote unavailable");
-  return {price:meta.regularMarketPrice,previousClose:meta.chartPreviousClose || meta.previousClose || meta.regularMarketPrice,priceTimestamp:Number.isFinite(meta.regularMarketTime) ? meta.regularMarketTime * 1000 : null};
+  return stockQuoteFromChart(result);
 }
 async function stockName(symbol) {
   if (!/^[A-Z0-9.=^\-]+$/i.test(symbol)) throw new Error("Invalid symbol");
@@ -77,20 +97,39 @@ async function fundQuote(code) {
   const priceDate = dateMatch ? `${dateMatch[2]}/${dateMatch[3]}` : null;
   const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
   const name = titleMatch ? titleMatch[1].replace(/\s*[-｜|]\s*Yahoo!?ファイナンス.*$/i, "").replace(/[【〖][^】〗]*[】〗].*$/, "").replace(/&amp;/g, "&").trim() : null;
-  return {price:Number(match[1].replaceAll(",", "")), previousClose:null, name:name || null, priceDate};
+  const price = Number(match[1].replaceAll(",", ""));
+  const previousClose = fundPreviousClose(html.slice(match.index, match.index + 4000), price);
+  return {price, previousClose, name:name || null, priceDate};
 }
 const handleRequest = async (req, res) => {
   const url = new URL(req.url, `http://127.0.0.1:${port}`);
   if (req.method === "OPTIONS") return send(res, 204, "", "text/plain");
   if (url.pathname === "/api/v1/state" && req.method === "GET") return send(res, 200, getState());
+  if (url.pathname === "/api/v1/snapshots" && req.method === "GET") {
+    const today = jstToday();
+    let from = url.searchParams.has("from") ? url.searchParams.get("from") : null;
+    let to = url.searchParams.has("to") ? url.searchParams.get("to") : null;
+    if (from !== null && !isValidSnapshotDate(from)) return send(res, 400, { error: "from must be a valid YYYY-MM-DD date." });
+    if (to !== null && !isValidSnapshotDate(to)) return send(res, 400, { error: "to must be a valid YYYY-MM-DD date." });
+    if (from === null && to === null) {
+      to = today;
+      from = shiftDate(today, -89);
+    } else if (from === null) {
+      from = shiftDate(to, -89);
+    } else if (to === null) {
+      to = today;
+    }
+    if (from > to) return send(res, 400, { error: "from must be on or before to." });
+    return send(res, 200, { apiVersion: 1, from, to, snapshots: getSnapshots(from, to) });
+  }
   if (url.pathname === "/api/v1/state" && req.method === "PUT") {
     if (!isSameOriginMutation(req)) return send(res, 403, { error: "Cross-origin state changes are not allowed." });
     try {
       const body = await readJson(req);
-      const result = saveState(body?.expectedRevision, body?.data);
+      const result = saveState(body?.expectedRevision, body?.data, body?.snapshot ?? null);
       if (result.notInitialized) return send(res, 409, { error: "state_not_initialized", currentRevision: result.state.revision });
       if (result.conflict) return send(res, 409, { error: "revision_conflict", currentRevision: result.state.revision, currentUpdatedAt: result.state.updatedAt });
-      return send(res, 200, result.state);
+      return send(res, 200, result.snapshot ? { ...result.state, snapshot: result.snapshot } : result.state);
     } catch (error) { return apiError(res, error); }
   }
   if (url.pathname === "/api/v1/migrate-local-storage" && req.method === "POST") {
