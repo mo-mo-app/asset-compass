@@ -194,7 +194,24 @@ function render() {
 function renderAllocation(total) {
   const types = ["日本株", "米国株", "投資信託"].map(type => [type, data.holdings.filter(h => h.type === type && hasValuation(h)).reduce((n,h) => n + valueOf(h), 0)]).filter(x => x[1]);
   $("#allocation").className = types.length ? "allocation" : "allocation empty-state";
-  $("#allocation").innerHTML = types.length ? types.map(([type,val]) => `<div class="allocation-row"><span>${type}</span><div class="bar"><i style="width:${val / total * 100}%"></i></div><b>${(val / total * 100).toFixed(1)}%</b></div>`).join("") : "保有資産を追加すると配分を表示します";
+  if (!types.length) {
+    $("#allocation").innerHTML = "保有資産を追加すると配分を表示します";
+    return;
+  }
+
+  const colors = ["#16736b", "#3b9c8e", "#d7a947"];
+  let angle = 0;
+  const segments = types.map(([, value], index) => {
+    const nextAngle = angle + value / total * 360;
+    const segment = `${colors[index]} ${angle}deg ${nextAngle}deg`;
+    angle = nextAngle;
+    return segment;
+  }).join(", ");
+  const details = types.map(([type, value], index) => {
+    const percentage = value / total * 100;
+    return `<li class="allocation-legend-row"><span class="allocation-legend-name"><i style="--allocation-color:${colors[index]}"></i>${type}</span><span class="allocation-legend-values"><b>${percentage.toFixed(1)}%</b><small>${yen.format(value)}</small></span></li>`;
+  }).join("");
+  $("#allocation").innerHTML = `<div class="allocation-chart-layout"><div class="allocation-donut" role="img" aria-label="資産配分 ${types.map(([type, value]) => `${type} ${(value / total * 100).toFixed(1)}%`).join("、")}" style="--allocation-chart:conic-gradient(${segments})"><div class="allocation-donut-center"><small>総資産評価額</small><b>${yen.format(total)}</b></div></div><ul class="allocation-legend">${details}</ul></div>`;
 }
 function renderAccountSummary() {
   const rows = data.accounts.map(a => { const hs=data.holdings.filter(h=>h.accountId===a.id), valued=hs.filter(hasValuation); return `<div class="account-summary-row"><span>${escapeHTML(a.name)}</span><b>${valued.length ? yen.format(valued.reduce((n,h) => n + valueOf(h),0)) : "—"}</b></div>`; }).join("");

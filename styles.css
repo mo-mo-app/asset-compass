@@ -73,3 +73,24 @@
   .sync-notice:not([hidden]){align-items:flex-start;flex-direction:column;padding:10px 12px}
   .sync-actions{flex-wrap:wrap}
 }
+
+.allocation-chart-layout{display:flex;align-items:center;justify-content:center;gap:24px;min-height:164px}
+.allocation-donut{width:148px;height:148px;flex:0 0 148px;display:grid;place-items:center;border-radius:50%;background:var(--allocation-chart);position:relative}
+.allocation-donut::before{content:"";position:absolute;inset:15px;border-radius:50%;background:var(--panel)}
+.allocation-donut-center{position:relative;z-index:1;display:grid;justify-items:center;gap:5px;width:calc(100% - 34px);text-align:center}
+.allocation-donut-center small{color:var(--muted);font-size:9px;white-space:nowrap}
+.allocation-donut-center b{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:500 13px "DM Mono",monospace;letter-spacing:-.5px}
+.allocation-legend{display:grid;gap:13px;flex:0 0 auto;min-width:0;width:max-content;margin:0;padding:0;list-style:none}
+.allocation-legend-row,.allocation-legend-name,.allocation-legend-values{display:flex;align-items:center}
+.allocation-legend-row{display:flex;align-items:center;gap:0;font-size:12px;min-width:0}
+.allocation-legend-name{gap:8px;min-width:calc(9px + 8px + 4em);flex:0 0 calc(9px + 8px + 4em)}
+.allocation-legend-name i{width:9px;height:9px;flex:0 0 9px;border-radius:50%;background:var(--allocation-color)}
+.allocation-legend-values{display:contents}
+.allocation-legend-values b{width:4.5em;flex:0 0 4.5em;text-align:right;color:var(--ink);font:500 12px "DM Mono",monospace;white-space:nowrap}
+.allocation-legend-values small{width:9em;flex:0 0 9em;margin-left:1em;text-align:right;color:var(--muted);font:10px "DM Mono",monospace;white-space:nowrap}
+@media(max-width:600px){
+  .allocation-chart-layout{flex-direction:column;align-items:center;gap:18px;padding:4px 0 2px}
+  .allocation-donut{width:156px;height:156px;flex-basis:156px}
+  .allocation-legend{width:max-content;max-width:100%;gap:12px}
+  .allocation-legend-row{gap:0}
+}
