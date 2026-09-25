@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Noto+Sans+JP:wght@400;500;600;700&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="styles.css?v=20260925-1" />
+    <link rel="stylesheet" href="styles.css?v=20260925-2" />
     <link rel="stylesheet" href="funds.css" />
   </head>
   <body>
@@ -40,6 +40,14 @@
             <div class="update-info-meta"><small id="usd-jpy-timestamp" class="usd-jpy-timestamp"></small><small id="last-fetch-at" class="last-fetch-at"></small></div>
           </div>
         </header>
+
+        <div id="sync-notice" class="sync-notice" role="status" aria-live="polite" hidden>
+          <span id="sync-message"></span>
+          <div class="sync-actions">
+            <button id="migrate-local" class="button ghost" type="button" hidden>この端末のデータを初回移行</button>
+            <button id="retry-sync" class="text-button" type="button" hidden>サーバーに再接続</button>
+          </div>
+        </div>
 
         <section id="dashboard-view" class="view active">
           <div class="status-line"><span id="quote-status">登録済みの銘柄はありません</span><span class="dot">•</span><span>すべて日本円換算</span></div>
@@ -77,6 +85,6 @@
     <dialog id="holding-dialog"><form id="holding-form" method="dialog" class="dialog-card"><div class="dialog-heading"><div><p class="eyebrow" id="holding-form-kicker">NEW HOLDING</p><h2 id="holding-dialog-title">保有資産を追加</h2></div><button type="button" class="close" data-close="holding-dialog">×</button></div><input type="hidden" id="holding-id" /><label>証券口座<select id="holding-account" required></select></label><div class="form-row"><label>資産区分<select id="holding-type" required><option>日本株</option><option>米国株</option><option>投資信託</option></select></label><label>通貨<select id="holding-currency" required><option value="JPY">JPY</option><option value="USD">USD</option></select></label></div><label>銘柄名<input id="holding-name" placeholder="例：トヨタ自動車" required /></label><label>Yahoo Finance ティッカー<input id="holding-symbol" placeholder="例：7203.T / AAPL" required autocapitalize="characters" /><small>このティッカーで価格を自動取得します</small><button type="button" class="text-button lookup-button" id="lookup-name">銘柄情報取得</button><small id="name-lookup-status" class="lookup-status" aria-live="polite"></small></label><div class="form-row"><label><span id="quantity-label">保有数量</span><input id="holding-quantity" type="number" min="0.0001" step="any" placeholder="100" required /></label><label><span id="cost-label">取得単価</span><input id="holding-cost" type="number" min="0" step="any" placeholder="2500" required /></label></div><p id="fund-unit-note" class="fund-unit-note" hidden>投資信託の基準価額・取得基準価額は、常に <strong>1万口あたり</strong> で入力・計算します。</p><div class="dialog-actions"><button type="button" class="button ghost" data-close="holding-dialog">キャンセル</button><button class="button primary" value="default">保存する</button></div></form></dialog>
 
     <dialog id="account-dialog"><form id="account-form" method="dialog" class="dialog-card small-dialog"><div class="dialog-heading"><div><p class="eyebrow" id="account-form-kicker">NEW ACCOUNT</p><h2 id="account-dialog-title">証券口座を追加</h2></div><button type="button" class="close" data-close="account-dialog">×</button></div><input type="hidden" id="account-id" /><label>口座名<input id="account-name" placeholder="例：SBI証券" required /></label><label>メモ（任意）<input id="account-note" placeholder="例：NISA / 特定口座" /></label><div class="dialog-actions"><button type="button" class="button ghost" data-close="account-dialog">キャンセル</button><button class="button primary" value="default">保存する</button></div></form></dialog>
-    <script src="app.js?v=20260925-1"></script>
+    <script src="app.js?v=20260925-2"></script>
   </body>
 </html>

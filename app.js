@@ -1,4 +1,5 @@
 const KEY = "asset-compass-v1";
+const LOCAL_BACKUP_KEY = "asset-compass-v1-pre-sync-backup";
 const yen = new Intl.NumberFormat("ja-JP", { style: "currency", currency: "JPY", maximumFractionDigits: 0 });
 const number = new Intl.NumberFormat("ja-JP", { maximumFractionDigits: 2 });
 function generateId() {
@@ -12,11 +13,148 @@ function generateId() {
   const hex = Array.from(bytes, byte => byte.toString(16).padStart(2, "0")).join("");
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
-let data = JSON.parse(localStorage.getItem(KEY) || "null") || { accounts: [{id: generateId(), name: "証券口座 1", note: ""}], holdings: [] };
+function readLocalData() {
+  try { return JSON.parse(localStorage.getItem(KEY) || "null"); }
+  catch { return null; }
+}
+let data = readLocalData() || { accounts: [{id: generateId(), name: "証券口座 1", note: ""}], holdings: [] };
 let fxRate = Number.isFinite(data.usdJpyRate) && data.usdJpyRate > 0 ? data.usdJpyRate : null;
+let serverRevision = null;
+let serverInitialized = false;
+let serverConnected = false;
 
 const $ = (s) => document.querySelector(s);
-const save = () => localStorage.setItem(KEY, JSON.stringify(data));
+const cloneData = value => JSON.parse(JSON.stringify(value));
+function saveCache() {
+    // localStorage is only a convenience cache; a quota/privacy failure must not
+    // turn a successful server save into a failed UI operation.
+    try { localStorage.setItem(KEY, JSON.stringify(data)); } catch { /* Cache is optional. */ }
+  }
+function showSyncNotice(message, { migration = false, retry = false } = {}) {
+  const notice = $("#sync-notice");
+  notice.hidden = !message;
+  $("#sync-message").textContent = message || "";
+  $("#migrate-local").hidden = !migration;
+  $("#retry-sync").hidden = !retry;
+}
+function applyServerState(payload) {
+  data = payload.data;
+  fxRate = Number.isFinite(data.usdJpyRate) && data.usdJpyRate > 0 ? data.usdJpyRate : null;
+  serverRevision = payload.revision;
+  serverInitialized = Boolean(payload.initialized);
+  serverConnected = true;
+  saveCache();
+}
+async function requestServerState() {
+  const response = await fetch("/api/v1/state", { cache: "no-store" });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.error || `共通データを取得できませんでした（${response.status}）`);
+  return payload;
+}
+function preserveLocalBackup(serverData) {
+  const raw = localStorage.getItem(KEY);
+  if (!raw || localStorage.getItem(LOCAL_BACKUP_KEY)) return false;
+  try {
+    if (JSON.stringify(JSON.parse(raw)) === JSON.stringify(serverData)) return false;
+    localStorage.setItem(LOCAL_BACKUP_KEY, raw);
+    return true;
+  } catch {
+    localStorage.setItem(LOCAL_BACKUP_KEY, raw);
+    return true;
+  }
+}
+async function loadServerState() {
+  try {
+    const payload = await requestServerState();
+    if (payload.initialized) {
+      const localBackupSaved = preserveLocalBackup(payload.data);
+      applyServerState(payload);
+      render();
+      showSyncNotice(localBackupSaved ? "この端末にあった以前のデータはバックアップとして残し、サーバーの共通データを読み込みました。自動統合はしていません。" : "");
+    } else {
+      serverRevision = payload.revision;
+      serverInitialized = false;
+      serverConnected = true;
+      render();
+      showSyncNotice("共通データは未初期化です。PC側のデータを正本にする場合はPCで初回移行してください。iPhone側のデータは自動統合しません。", { migration: true });
+    }
+  } catch (error) {
+    serverConnected = false;
+    render();
+    showSyncNotice(`共通サーバーに接続できません。保存済みキャッシュを表示中です。変更は保存されません。${error.message}`, { retry: true });
+  }
+}
+async function persistState(previousData) {
+  try {
+    if (!serverConnected || !serverInitialized || !Number.isSafeInteger(serverRevision)) {
+      throw new Error("共通データが未接続または未初期化です。初回移行後に保存してください。");
+    }
+    const response = await fetch("/api/v1/state", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ expectedRevision: serverRevision, data })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (response.status === 409) {
+      try {
+        const latest = await requestServerState();
+        if (latest.initialized) {
+          preserveLocalBackup(latest.data);
+          applyServerState(latest);
+          render();
+        }
+      } catch { /* Keep the local form draft when the latest state cannot be fetched. */ }
+      throw Object.assign(new Error("別の端末で更新されました。最新状態を読み込みました。入力内容を確認して、必要ならもう一度保存してください。"), { conflict: true });
+    }
+    if (!response.ok) throw new Error(payload.error || `保存できませんでした（${response.status}）`);
+    applyServerState(payload);
+    render();
+    showSyncNotice("");
+  } catch (error) {
+    if (!error.conflict) {
+      data = previousData;
+      fxRate = Number.isFinite(data.usdJpyRate) && data.usdJpyRate > 0 ? data.usdJpyRate : null;
+      render();
+      if (error instanceof TypeError) serverConnected = false;
+      showSyncNotice(`保存できませんでした。入力内容は保持しています。接続を確認して再試行してください。${error.message}`, {
+        migration: serverConnected && !serverInitialized,
+        retry: !serverConnected
+      });
+    } else {
+      showSyncNotice(error.message);
+    }
+    throw error;
+  }
+}
+async function migrateLocalData() {
+  const button = $("#migrate-local");
+  button.disabled = true;
+  try {
+    const localData = readLocalData() || data;
+    const response = await fetch("/api/v1/migrate-local-storage", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ data: localData })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (response.status === 409) {
+      const latest = await requestServerState();
+      preserveLocalBackup(latest.data);
+      applyServerState(latest);
+      render();
+      showSyncNotice("別の端末ですでに初回移行が完了しています。サーバーの共通データを読み込みました。端末ごとのデータは自動統合していません。");
+      return;
+    }
+    if (!response.ok) throw new Error(payload.error || `移行できませんでした（${response.status}）`);
+    applyServerState(payload);
+    render();
+    showSyncNotice(`初回移行が完了しました。証券口座 ${payload.accountsCount}件、保有資産 ${payload.holdingsCount}件をサーバーに保存しました。`);
+  } catch (error) {
+    showSyncNotice(`初回移行に失敗しました。localStorageのデータは残っています。${error.message}`, { migration: true, retry: true });
+  } finally {
+    button.disabled = false;
+  }
+}
 // 国内投信の基準価額は、通常「1万口あたり」。保有口数は実口数で入力する。
 const quantityDivisor = (h) => h.type === "投資信託" ? 10000 : 1;
 const hasQuote = (h) => Number.isFinite(h.price);
@@ -129,7 +267,11 @@ async function updateQuote(h) {
   if (typeof quote.priceDate === "string" && /^\d{1,2}\/\d{1,2}$/.test(quote.priceDate)) h.priceDate=quote.priceDate;
 }
 async function updateAll() {
-  const button=$("#refresh-all");button.disabled=true;button.innerHTML="⌛ <span>更新中…</span>";const errors=[];
+  if (!serverConnected || !serverInitialized) {
+    showSyncNotice("共通サーバーに接続して初回移行を完了すると、価格を更新できます。", { migration: serverConnected && !serverInitialized, retry: !serverConnected });
+    return;
+  }
+  const previousData=cloneData(data), button=$("#refresh-all");button.disabled=true;button.innerHTML="⌛ <span>更新中…</span>";const errors=[];
   try {
     const fxQuote = {symbol:"JPY=X", currency:"JPY"};
     await updateQuote(fxQuote);
@@ -139,7 +281,11 @@ async function updateAll() {
   } catch {}
   for(const h of data.holdings){try{await updateQuote(h)}catch(error){errors.push(`${h.name}（${h.symbol}）`)}}
   data.lastQuoteFetchedAt=Date.now();
-  save();render();button.disabled=false;button.innerHTML="↻ <span>価格を更新</span>"; if(errors.length) $("#quote-status").textContent=`価格を取得できませんでした：${errors.join("、")}。投信は8桁の投信コードを入力してください。`;
+  try {
+    await persistState(previousData);
+    if(errors.length) $("#quote-status").textContent=`価格を取得できませんでした：${errors.join("、")}。投信は8桁の投信コードを入力してください。`;
+  } catch { /* persistState restores the last confirmed state and shows the error. */ }
+  finally {button.disabled=false;button.innerHTML="↻ <span>価格を更新</span>";}
 }
 document.addEventListener("click", e => {
   const nav=e.target.closest(".nav-item");
@@ -155,9 +301,27 @@ document.addEventListener("click", e => {
   const ea=e.target.closest("[data-edit-account]");if(ea)openAccount(ea.dataset.editAccount);
   const close=e.target.closest("[data-close]");if(close)$("#"+close.dataset.close).close();
 });
-$("#holding-form").addEventListener("submit", e=>{e.preventDefault();const id=$("#holding-id").value;const h={id:id||generateId(),accountId:$("#holding-account").value,type:$("#holding-type").value,currency:$("#holding-currency").value,name:$("#holding-name").value.trim(),symbol:$("#holding-symbol").value.trim().toUpperCase(),quantity:Number($("#holding-quantity").value),cost:Number($("#holding-cost").value)};const old=data.holdings.findIndex(x=>x.id===id);if(old>=0)data.holdings[old]={...data.holdings[old],...h};else data.holdings.push(h);save();$("#holding-dialog").close();render();});
-$("#account-form").addEventListener("submit",e=>{e.preventDefault();const id=$("#account-id").value,a={id:id||generateId(),name:$("#account-name").value.trim(),note:$("#account-note").value.trim()};const i=data.accounts.findIndex(x=>x.id===id);if(i>=0)data.accounts[i]=a;else data.accounts.push(a);save();$("#account-dialog").close();render();});
+$("#holding-form").addEventListener("submit",async e=>{
+  e.preventDefault();
+  const previousData=cloneData(data), id=$("#holding-id").value;
+  const h={id:id||generateId(),accountId:$("#holding-account").value,type:$("#holding-type").value,currency:$("#holding-currency").value,name:$("#holding-name").value.trim(),symbol:$("#holding-symbol").value.trim().toUpperCase(),quantity:Number($("#holding-quantity").value),cost:Number($("#holding-cost").value)};
+  const old=data.holdings.findIndex(x=>x.id===id);
+  if(old>=0)data.holdings[old]={...data.holdings[old],...h};else data.holdings.push(h);
+  try { await persistState(previousData); $("#holding-dialog").close(); }
+  catch { /* Keep the dialog open so the user can retry or reapply after a conflict. */ }
+});
+$("#account-form").addEventListener("submit",async e=>{
+  e.preventDefault();
+  const previousData=cloneData(data),id=$("#account-id").value;
+  const a={id:id||generateId(),name:$("#account-name").value.trim(),note:$("#account-note").value.trim()};
+  const i=data.accounts.findIndex(x=>x.id===id);
+  if(i>=0)data.accounts[i]=a;else data.accounts.push(a);
+  try { await persistState(previousData); $("#account-dialog").close(); }
+  catch { /* Keep the dialog open so the user can retry or reapply after a conflict. */ }
+});
 $("#filter-account").addEventListener("change",renderHoldingsTable);$("#filter-type").addEventListener("change",renderHoldingsTable);$("#holding-type").addEventListener("change",updateHoldingFormLabels);$("#refresh-all").addEventListener("click",updateAll);$("#lookup-name").addEventListener("click",lookupHoldingName);
+$("#migrate-local").addEventListener("click",migrateLocalData);
+$("#retry-sync").addEventListener("click",loadServerState);
 async function boot() {
   // file:// の保存領域と localhost の保存領域は別物。
   // ハッシュはサーバーへ送られないため、保有データを外部送信せずに一度だけ移行できる。
@@ -170,9 +334,11 @@ async function boot() {
   if (migration) {
     try {
       const migrated = JSON.parse(decodeURIComponent(escape(atob(migration))));
-      if(migrated?.accounts && migrated?.holdings){ data=migrated; fxRate = Number.isFinite(data.usdJpyRate) && data.usdJpyRate > 0 ? data.usdJpyRate : null; save(); history.replaceState({},"",location.pathname); }
+      if(migrated?.accounts && migrated?.holdings){ data=migrated; fxRate = Number.isFinite(data.usdJpyRate) && data.usdJpyRate > 0 ? data.usdJpyRate : null; localStorage.setItem(KEY,JSON.stringify(data)); history.replaceState({},"",location.pathname); }
     } catch { $("#quote-status").textContent = "データ移行に失敗しました。もう一度 index.html を開いてください。"; }
   }
-  $("#today").textContent=new Date().toLocaleDateString("ja-JP",{year:"numeric",month:"long",day:"numeric",weekday:"short"}).toUpperCase();render();
+  $("#today").textContent=new Date().toLocaleDateString("ja-JP",{year:"numeric",month:"long",day:"numeric",weekday:"short"}).toUpperCase();
+  render();
+  await loadServerState();
 }
 boot();

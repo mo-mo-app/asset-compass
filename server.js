@@ -2,15 +2,48 @@ const http = require("http");
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
+const { getState, migrateLocalState, saveState } = require("./database");
 const root = __dirname;
 let migration = null;
-const port = 8766;
+const port = Number(process.env.ASSET_COMPASS_PORT) || 8766;
+const bindLan = process.env.ASSET_COMPASS_BIND_LAN !== "false";
+const publicFiles = new Set(["index.html", "app.js", "styles.css", "funds.css"]);
 
 const contentTypes = {".html":"text/html; charset=utf-8",".js":"text/javascript; charset=utf-8",".css":"text/css; charset=utf-8"};
 const send = (res, status, body, type="application/json; charset=utf-8") => {
-  res.writeHead(status, {"Content-Type":type,"Access-Control-Allow-Origin":"*","Cache-Control":"no-store"});
+  res.writeHead(status, {"Content-Type":type,"Cache-Control":"no-store"});
   res.end(Buffer.isBuffer(body) ? body : (typeof body === "string" ? body : JSON.stringify(body)));
 };
+function readJson(req, limit = 2 * 1024 * 1024) {
+  return new Promise((resolve, reject) => {
+    let body = "", size = 0, tooLarge = false;
+    req.setEncoding("utf8");
+    req.on("data", chunk => {
+      size += Buffer.byteLength(chunk);
+      if (size > limit) tooLarge = true;
+      else if (!tooLarge) body += chunk;
+    });
+    req.on("end", () => {
+      if (tooLarge) return reject(Object.assign(new Error("Request body is too large."), { statusCode: 413 }));
+      try { resolve(JSON.parse(body)); }
+      catch { reject(Object.assign(new Error("Request body must be valid JSON."), { statusCode: 400 })); }
+    });
+    req.on("error", reject);
+  });
+}
+function isSameOriginMutation(req) {
+  const origin = req.headers.origin;
+  if (!origin) return true;
+  try {
+    const parsed = new URL(origin);
+    const protocol = req.socket.encrypted ? "https:" : "http:";
+    return parsed.protocol === protocol && parsed.host.toLowerCase() === String(req.headers.host || "").toLowerCase();
+  } catch { return false; }
+}
+function apiError(res, error) {
+  const status = error.statusCode || (error.message.startsWith("Request body") ? 400 : 400);
+  return send(res, status, { error: error.message });
+}
 async function quote(symbol) {
   if (!/^[A-Z0-9.=^\-]+$/i.test(symbol)) throw new Error("Invalid symbol");
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=5d&interval=1d`;
@@ -49,6 +82,26 @@ async function fundQuote(code) {
 const handleRequest = async (req, res) => {
   const url = new URL(req.url, `http://127.0.0.1:${port}`);
   if (req.method === "OPTIONS") return send(res, 204, "", "text/plain");
+  if (url.pathname === "/api/v1/state" && req.method === "GET") return send(res, 200, getState());
+  if (url.pathname === "/api/v1/state" && req.method === "PUT") {
+    if (!isSameOriginMutation(req)) return send(res, 403, { error: "Cross-origin state changes are not allowed." });
+    try {
+      const body = await readJson(req);
+      const result = saveState(body?.expectedRevision, body?.data);
+      if (result.notInitialized) return send(res, 409, { error: "state_not_initialized", currentRevision: result.state.revision });
+      if (result.conflict) return send(res, 409, { error: "revision_conflict", currentRevision: result.state.revision, currentUpdatedAt: result.state.updatedAt });
+      return send(res, 200, result.state);
+    } catch (error) { return apiError(res, error); }
+  }
+  if (url.pathname === "/api/v1/migrate-local-storage" && req.method === "POST") {
+    if (!isSameOriginMutation(req)) return send(res, 403, { error: "Cross-origin state changes are not allowed." });
+    try {
+      const body = await readJson(req);
+      const result = migrateLocalState(body?.data);
+      if (result.conflict) return send(res, 409, { error: "already_initialized", currentRevision: result.state.revision });
+      return send(res, 201, { ...result.state, accountsCount: result.accountsCount, holdingsCount: result.holdingsCount });
+    } catch (error) { return apiError(res, error); }
+  }
   if (url.pathname === "/api/name") {
     try { return send(res, 200, await stockName(url.searchParams.get("symbol") || "")); }
     catch (error) { return send(res, 502, {error:error.message}); }
@@ -63,7 +116,8 @@ const handleRequest = async (req, res) => {
   if (url.pathname === "/api/migration") { const saved=migration; migration=null; return send(res, 200, saved || {}); }
   const safePath = url.pathname === "/" ? "/index.html" : url.pathname;
   const file = path.resolve(root, `.${safePath}`);
-  if (!file.startsWith(root) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) return send(res, 404, "Not found", "text/plain");
+  const relativeFile = path.relative(root, file).split(path.sep).join("/");
+  if (relativeFile.startsWith("..") || !publicFiles.has(relativeFile) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) return send(res, 404, "Not found", "text/plain");
   send(res, 200, fs.readFileSync(file), contentTypes[path.extname(file)] || "application/octet-stream");
 };
 
@@ -86,8 +140,8 @@ function startListener(host, label) {
 }
 
 startListener("127.0.0.1", "PC内アクセス");
-if (lanAddresses.length) {
+if (bindLan && lanAddresses.length) {
   lanAddresses.forEach((entry, index) => startListener(entry.address, index === 0 ? "同一LANアクセス" : `LANアクセス候補 (${entry.name})`));
-} else {
+} else if (bindLan) {
   console.log("同一LAN用のプライベートIPv4アドレスが見つかりませんでした。");
 }

@@ -8,7 +8,6 @@ $migration = $null
 function Send-Response($response, [int]$status, $body, [string]$contentType = 'application/json; charset=utf-8') {
   $response.StatusCode = $status
   $response.ContentType = $contentType
-  $response.Headers.Add('Access-Control-Allow-Origin', '*')
   $bytes = if ($body -is [byte[]]) { $body } else { [Text.Encoding]::UTF8.GetBytes([string]$body) }
   $response.ContentLength64 = $bytes.Length
   $response.OutputStream.Write($bytes, 0, $bytes.Length)

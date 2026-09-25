@@ -15,3 +15,6 @@ node_modules/
 
 # Logs
 *.log
+
+# Asset Compass local database and SQLite sidecar files
+/data/

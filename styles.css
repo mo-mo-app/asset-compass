@@ -2,6 +2,11 @@
 
 .holding-quantity{display:none}
 
+.sync-notice[hidden]{display:none}
+.sync-notice:not([hidden]){display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:16px;padding:12px 14px;border:1px solid var(--line);border-radius:7px;background:#eef4f0;color:var(--ink);font-size:12px;line-height:1.55}
+.sync-actions{display:flex;align-items:center;gap:8px;flex:0 0 auto}
+.sync-actions .button{padding:7px 10px;font-size:11px}
+
 .mobile-brand,.mobile-bottom-nav{display:none}
 .fx-info{display:flex;flex-direction:column;align-items:flex-end;gap:2px;white-space:nowrap}
 .refresh-controls{display:grid;gap:5px;padding:8px 10px;border:1px solid rgba(220,228,223,.8);border-radius:8px;background:rgba(255,255,255,.58)}
@@ -65,4 +70,6 @@
   #dashboard-holdings .holding-menu{grid-area:menu;justify-self:end;align-self:start;width:44px;height:44px;margin:-5px -6px 0 0;padding:0}
   #dashboard-holdings .holding-value{grid-area:value;display:flex;justify-content:space-between;align-items:baseline;gap:12px;border-top:1px solid var(--line);padding-top:10px}
   #dashboard-holdings .holding-value .money{font:500 17px "DM Mono",monospace;white-space:nowrap}
+  .sync-notice:not([hidden]){align-items:flex-start;flex-direction:column;padding:10px 12px}
+  .sync-actions{flex-wrap:wrap}
 }
