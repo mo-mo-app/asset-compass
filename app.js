@@ -13,15 +13,16 @@ function generateId() {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 let data = JSON.parse(localStorage.getItem(KEY) || "null") || { accounts: [{id: generateId(), name: "証券口座 1", note: ""}], holdings: [] };
-let fxRate = 150;
+let fxRate = Number.isFinite(data.usdJpyRate) && data.usdJpyRate > 0 ? data.usdJpyRate : null;
 
 const $ = (s) => document.querySelector(s);
 const save = () => localStorage.setItem(KEY, JSON.stringify(data));
 // 国内投信の基準価額は、通常「1万口あたり」。保有口数は実口数で入力する。
 const quantityDivisor = (h) => h.type === "投資信託" ? 10000 : 1;
 const hasQuote = (h) => Number.isFinite(h.price);
-const valueOf = (h) => hasQuote(h) ? h.price * h.quantity / quantityDivisor(h) * (h.currency === "USD" ? fxRate : 1) : null;
-const costOf = (h) => h.cost * h.quantity / quantityDivisor(h) * (h.currency === "USD" ? fxRate : 1);
+const hasValuation = (h) => hasQuote(h) && (h.currency !== "USD" || Number.isFinite(fxRate));
+const valueOf = (h) => hasValuation(h) ? h.price * h.quantity / quantityDivisor(h) * (h.currency === "USD" ? fxRate : 1) : null;
+const costOf = (h) => h.currency === "USD" && !Number.isFinite(fxRate) ? null : h.cost * h.quantity / quantityDivisor(h) * (h.currency === "USD" ? fxRate : 1);
 const gainClass = (n) => n > 0 ? "positive" : n < 0 ? "negative" : "";
 const signed = (n) => `${n > 0 ? "+" : n < 0 ? "−" : ""}${yen.format(Math.abs(n))}`;
 const account = (id) => data.accounts.find(a => a.id === id);
@@ -30,41 +31,44 @@ function render() {
   const holdings = data.holdings;
   const quoted = holdings.filter(hasQuote);
   const missingQuotes = holdings.length - quoted.length;
-  const total = quoted.reduce((n,h) => n + valueOf(h), 0);
-  const cost = quoted.reduce((n,h) => n + costOf(h), 0);
+  const valued = holdings.filter(hasValuation);
+  const total = valued.reduce((n,h) => n + valueOf(h), 0);
+  const cost = valued.reduce((n,h) => n + costOf(h), 0);
   const gain = total - cost;
-  const day = quoted.reduce((n,h) => n + (h.price - (h.previousClose ?? h.price)) * h.quantity / quantityDivisor(h) * (h.currency === "USD" ? fxRate : 1), 0);
-  $("#total-value").textContent = quoted.length ? yen.format(total) : "—";
-  $("#total-cost").textContent = quoted.length ? `取得額 ${yen.format(cost)}${missingQuotes ? `（未取得 ${missingQuotes}件を除く）` : ""}` : "価格を更新してください";
-  $("#total-gain").textContent = quoted.length ? signed(gain) : "—";
+  const day = valued.reduce((n,h) => n + (h.price - (h.previousClose ?? h.price)) * h.quantity / quantityDivisor(h) * (h.currency === "USD" ? fxRate : 1), 0);
+  $("#total-value").textContent = valued.length ? yen.format(total) : "—";
+  $("#total-cost").textContent = valued.length ? `取得額 ${yen.format(cost)}${missingQuotes ? `（未取得 ${missingQuotes}件を除く）` : ""}` : holdings.some(h => hasQuote(h) && h.currency === "USD") ? "為替レート取得後に表示" : "価格を更新してください";
+  $("#total-gain").textContent = valued.length ? signed(gain) : "—";
   $("#total-gain").className = gainClass(gain);
   $("#total-gain-rate").textContent = cost ? `${(gain / cost * 100).toFixed(2)}%` : "—";
   $("#total-gain-rate").className = gainClass(gain);
-  $("#day-gain").textContent = quoted.length ? signed(day) : "—";
+  $("#day-gain").textContent = valued.length ? signed(day) : "—";
   $("#day-gain").className = gainClass(day);
   $("#day-gain-rate").textContent = total - day ? `${(day / (total - day) * 100).toFixed(2)}%` : "—";
   $("#day-gain-rate").className = gainClass(day);
   $("#asset-count").textContent = holdings.length ? `${holdings.length} 銘柄` : "";
   $("#quote-status").textContent = holdings.length ? `価格取得済み ${quoted.length}/${holdings.length}件${missingQuotes ? ` ／ 未取得 ${missingQuotes}件` : ""}` : "登録済みの銘柄はありません";
   $("#last-fetch-at").textContent = data.lastQuoteFetchedAt ? `最終取得 ${formatDateTime(data.lastQuoteFetchedAt)}` : "";
+  $("#usd-jpy-rate").textContent = Number.isFinite(fxRate) ? `USD/JPY ${fxRate.toFixed(2)}` : "USD/JPY —";
+  $("#usd-jpy-timestamp").textContent = Number.isFinite(data.usdJpyTimestamp) ? `為替日時 ${formatDateTime(data.usdJpyTimestamp)}` : "";
   renderAllocation(total); renderAccountSummary(); renderDashboardHoldings(); renderHoldingsTable(); renderAccounts(); renderAccountOptions();
 }
 function renderAllocation(total) {
-  const types = ["日本株", "米国株", "投資信託"].map(type => [type, data.holdings.filter(h => h.type === type && hasQuote(h)).reduce((n,h) => n + valueOf(h), 0)]).filter(x => x[1]);
+  const types = ["日本株", "米国株", "投資信託"].map(type => [type, data.holdings.filter(h => h.type === type && hasValuation(h)).reduce((n,h) => n + valueOf(h), 0)]).filter(x => x[1]);
   $("#allocation").className = types.length ? "allocation" : "allocation empty-state";
   $("#allocation").innerHTML = types.length ? types.map(([type,val]) => `<div class="allocation-row"><span>${type}</span><div class="bar"><i style="width:${val / total * 100}%"></i></div><b>${(val / total * 100).toFixed(1)}%</b></div>`).join("") : "保有資産を追加すると配分を表示します";
 }
 function renderAccountSummary() {
-  const rows = data.accounts.map(a => { const hs=data.holdings.filter(h=>h.accountId===a.id), quoted=hs.filter(hasQuote); return `<div class="account-summary-row"><span>${escapeHTML(a.name)}</span><b>${quoted.length ? yen.format(quoted.reduce((n,h) => n + valueOf(h),0)) : "—"}</b></div>`; }).join("");
+  const rows = data.accounts.map(a => { const hs=data.holdings.filter(h=>h.accountId===a.id), valued=hs.filter(hasValuation); return `<div class="account-summary-row"><span>${escapeHTML(a.name)}</span><b>${valued.length ? yen.format(valued.reduce((n,h) => n + valueOf(h),0)) : "—"}</b></div>`; }).join("");
   $("#account-summary").className = rows ? "account-summary" : "account-summary empty-state";
   $("#account-summary").innerHTML = rows || "証券口座を追加してください";
 }
 function holdingRow(h, compact = false) {
-  const value = valueOf(h), gain = hasQuote(h) ? value - costOf(h) : null, rate = gain !== null && costOf(h) ? gain / costOf(h) * 100 : null;
+  const value = valueOf(h), gain = hasValuation(h) ? value - costOf(h) : null, rate = gain !== null && costOf(h) ? gain / costOf(h) * 100 : null;
   const marketDate = h.type === "投資信託" ? formatFundDate(h.priceDate) : formatDateTime(h.priceTimestamp);
   const marketLabel = h.type === "投資信託" ? "基準日" : "価格日時";
   const quantityLabel = h.type === "投資信託" ? "保有口数" : "保有数量";
-  return `<div class="holding-row"><div class="holding-identity"><div class="holding-name">${escapeHTML(h.name)}</div><div class="holding-meta">${escapeHTML(h.symbol)} · ${escapeHTML(account(h.accountId)?.name || "—")}</div>${marketDate ? `<div class="holding-updated">${marketLabel} ${marketDate}</div>` : ""}</div><div class="holding-cell optional holding-current"><small>現在値</small><span class="money">${hasQuote(h) ? number.format(h.price) + " " + h.currency : "未取得"}</span></div><div class="holding-cell holding-value ${compact ? 'hide-mobile' : ''}"><small>評価額</small><span class="money">${hasQuote(h) ? yen.format(value) : "—"}</span></div><div class="holding-cell optional holding-gain"><small>評価損益</small><span class="gain ${gainClass(gain || 0)}">${gain !== null ? `${signed(gain)}<br>${rate.toFixed(2)}%` : "—"}</span></div><div class="holding-cell holding-type ${compact ? 'hide-mobile' : ''}"><small>資産区分</small><span>${h.type}</span></div><button class="icon-button holding-menu" data-edit-holding="${h.id}" aria-label="編集">⋮</button><div class="holding-cell holding-quantity"><small>${quantityLabel}</small><span>${number.format(h.quantity)}</span></div></div>`;
+  return `<div class="holding-row"><div class="holding-identity"><div class="holding-name">${escapeHTML(h.name)}</div><div class="holding-meta">${escapeHTML(h.symbol)} · ${escapeHTML(account(h.accountId)?.name || "—")}</div>${marketDate ? `<div class="holding-updated">${marketLabel} ${marketDate}</div>` : ""}</div><div class="holding-cell optional holding-current"><small>現在値</small><span class="money">${hasQuote(h) ? number.format(h.price) + " " + h.currency : "未取得"}</span></div><div class="holding-cell holding-value ${compact ? 'hide-mobile' : ''}"><small>評価額</small><span class="money">${value !== null ? yen.format(value) : "—"}</span></div><div class="holding-cell optional holding-gain"><small>評価損益</small><span class="gain ${gainClass(gain || 0)}">${gain !== null ? `${signed(gain)}<br>${rate.toFixed(2)}%` : "—"}</span></div><div class="holding-cell holding-type ${compact ? 'hide-mobile' : ''}"><small>資産区分</small><span>${h.type}</span></div><button class="icon-button holding-menu" data-edit-holding="${h.id}" aria-label="編集">⋮</button><div class="holding-cell holding-quantity"><small>${quantityLabel}</small><span>${number.format(h.quantity)}</span></div></div>`;
 }
 function renderDashboardHoldings() { $("#dashboard-holdings").innerHTML = data.holdings.length ? data.holdings.slice(0,5).map(h => holdingRow(h,true)).join("") : `<div class="empty-state" style="height:100px">まだ保有資産がありません</div>`; }
 function renderHoldingsTable() {
@@ -82,7 +86,7 @@ function formatDateTime(timestamp) {
 }
 function formatFundDate(value) { return typeof value === "string" && /^\d{1,2}\/\d{1,2}$/.test(value) ? value : ""; }
 function renderAccounts() {
-  $("#accounts-list").innerHTML = data.accounts.map(a => { const list=data.holdings.filter(h=>h.accountId===a.id), quoted=list.filter(hasQuote), value=quoted.reduce((n,h)=>n+valueOf(h),0); return `<article class="account-card"><div class="account-card-top"><div><h3>${escapeHTML(a.name)}</h3><p class="account-note">${escapeHTML(a.note || "メモなし")}</p></div><button class="icon-button" data-edit-account="${a.id}">⋮</button></div><p class="account-card-value">${quoted.length ? yen.format(value) : "—"}</p><p class="account-card-count">${list.length} 銘柄を保有</p></article>`; }).join("");
+  $("#accounts-list").innerHTML = data.accounts.map(a => { const list=data.holdings.filter(h=>h.accountId===a.id), valued=list.filter(hasValuation), value=valued.reduce((n,h)=>n+valueOf(h),0); return `<article class="account-card"><div class="account-card-top"><div><h3>${escapeHTML(a.name)}</h3><p class="account-note">${escapeHTML(a.note || "メモなし")}</p></div><button class="icon-button" data-edit-account="${a.id}">⋮</button></div><p class="account-card-value">${valued.length ? yen.format(value) : "—"}</p><p class="account-card-count">${list.length} 銘柄を保有</p></article>`; }).join("");
 }
 function renderAccountOptions() { const current = $("#filter-account").value; $("#filter-account").innerHTML = `<option value="all">すべての口座</option>${data.accounts.map(a=>`<option value="${a.id}">${escapeHTML(a.name)}</option>`).join("")}`; $("#filter-account").value = current; }
 function escapeHTML(s) { const d=document.createElement("div"); d.textContent=s; return d.innerHTML; }
@@ -125,13 +129,32 @@ async function updateQuote(h) {
   if (typeof quote.priceDate === "string" && /^\d{1,2}\/\d{1,2}$/.test(quote.priceDate)) h.priceDate=quote.priceDate;
 }
 async function updateAll() {
-  if(!data.holdings.length)return; const button=$("#refresh-all");button.disabled=true;button.innerHTML="⌛ <span>更新中…</span>";const errors=[];
-  try { const fxQuote = {symbol:"JPY=X", currency:"JPY"}; await updateQuote(fxQuote); fxRate = fxQuote.price || fxRate; } catch {}
+  const button=$("#refresh-all");button.disabled=true;button.innerHTML="⌛ <span>更新中…</span>";const errors=[];
+  try {
+    const fxQuote = {symbol:"JPY=X", currency:"JPY"};
+    await updateQuote(fxQuote);
+    fxRate = fxQuote.price;
+    data.usdJpyRate = fxRate;
+    data.usdJpyTimestamp = Number.isFinite(fxQuote.priceTimestamp) && fxQuote.priceTimestamp > 0 ? fxQuote.priceTimestamp : null;
+  } catch {}
   for(const h of data.holdings){try{await updateQuote(h)}catch(error){errors.push(`${h.name}（${h.symbol}）`)}}
   data.lastQuoteFetchedAt=Date.now();
   save();render();button.disabled=false;button.innerHTML="↻ <span>価格を更新</span>"; if(errors.length) $("#quote-status").textContent=`価格を取得できませんでした：${errors.join("、")}。投信は8桁の投信コードを入力してください。`;
 }
-document.addEventListener("click", e => { const nav=e.target.closest(".nav-item"); if(nav){document.querySelectorAll(".nav-item,.view").forEach(x=>x.classList.remove("active"));nav.classList.add("active");$(`#${nav.dataset.view}-view`).classList.add("active");$("#page-title").textContent={dashboard:"資産の全体像",holdings:"保有資産",accounts:"証券口座"}[nav.dataset.view];} const go=e.target.closest("[data-go]");if(go)document.querySelector(`[data-view="${go.dataset.go}"]`).click();if(e.target.id==="add-holding")openHolding();if(e.target.id==="add-account")openAccount();const eh=e.target.closest("[data-edit-holding]");if(eh)openHolding(eh.dataset.editHolding);const ea=e.target.closest("[data-edit-account]");if(ea)openAccount(ea.dataset.editAccount);const close=e.target.closest("[data-close]");if(close)$("#"+close.dataset.close).close(); });
+document.addEventListener("click", e => {
+  const nav=e.target.closest(".nav-item");
+  if(nav){
+    document.querySelectorAll(".nav-item").forEach(x=>x.classList.toggle("active",x.dataset.view===nav.dataset.view));
+    document.querySelectorAll(".view").forEach(x=>x.classList.remove("active"));
+    $(`#${nav.dataset.view}-view`).classList.add("active");
+    $("#page-title").textContent={dashboard:"資産の全体像",holdings:"保有資産",accounts:"証券口座"}[nav.dataset.view];
+  }
+  const go=e.target.closest("[data-go]");if(go)document.querySelector(`[data-view="${go.dataset.go}"]`).click();
+  if(e.target.id==="add-holding")openHolding();if(e.target.id==="add-account")openAccount();
+  const eh=e.target.closest("[data-edit-holding]");if(eh)openHolding(eh.dataset.editHolding);
+  const ea=e.target.closest("[data-edit-account]");if(ea)openAccount(ea.dataset.editAccount);
+  const close=e.target.closest("[data-close]");if(close)$("#"+close.dataset.close).close();
+});
 $("#holding-form").addEventListener("submit", e=>{e.preventDefault();const id=$("#holding-id").value;const h={id:id||generateId(),accountId:$("#holding-account").value,type:$("#holding-type").value,currency:$("#holding-currency").value,name:$("#holding-name").value.trim(),symbol:$("#holding-symbol").value.trim().toUpperCase(),quantity:Number($("#holding-quantity").value),cost:Number($("#holding-cost").value)};const old=data.holdings.findIndex(x=>x.id===id);if(old>=0)data.holdings[old]={...data.holdings[old],...h};else data.holdings.push(h);save();$("#holding-dialog").close();render();});
 $("#account-form").addEventListener("submit",e=>{e.preventDefault();const id=$("#account-id").value,a={id:id||generateId(),name:$("#account-name").value.trim(),note:$("#account-note").value.trim()};const i=data.accounts.findIndex(x=>x.id===id);if(i>=0)data.accounts[i]=a;else data.accounts.push(a);save();$("#account-dialog").close();render();});
 $("#filter-account").addEventListener("change",renderHoldingsTable);$("#filter-type").addEventListener("change",renderHoldingsTable);$("#holding-type").addEventListener("change",updateHoldingFormLabels);$("#refresh-all").addEventListener("click",updateAll);$("#lookup-name").addEventListener("click",lookupHoldingName);
@@ -147,7 +170,7 @@ async function boot() {
   if (migration) {
     try {
       const migrated = JSON.parse(decodeURIComponent(escape(atob(migration))));
-      if(migrated?.accounts && migrated?.holdings){ data=migrated; save(); history.replaceState({},"",location.pathname); }
+      if(migrated?.accounts && migrated?.holdings){ data=migrated; fxRate = Number.isFinite(data.usdJpyRate) && data.usdJpyRate > 0 ? data.usdJpyRate : null; save(); history.replaceState({},"",location.pathname); }
     } catch { $("#quote-status").textContent = "データ移行に失敗しました。もう一度 index.html を開いてください。"; }
   }
   $("#today").textContent=new Date().toLocaleDateString("ja-JP",{year:"numeric",month:"long",day:"numeric",weekday:"short"}).toUpperCase();render();

@@ -2,8 +2,35 @@
 
 .holding-quantity{display:none}
 
+.mobile-brand,.mobile-bottom-nav{display:none}
+.fx-info{display:flex;flex-direction:column;align-items:flex-end;gap:2px;white-space:nowrap}
+.refresh-controls{display:grid;gap:5px;padding:8px 10px;border:1px solid rgba(220,228,223,.8);border-radius:8px;background:rgba(255,255,255,.58)}
+.update-info-primary{display:flex;align-items:center;justify-content:space-between;gap:14px}
+.usd-jpy-rate{font:500 14px "DM Mono",monospace;color:var(--ink);white-space:nowrap}
+.update-info-meta{display:flex;justify-content:space-between;gap:14px}
+.usd-jpy-timestamp{color:var(--muted);font-size:10px;white-space:nowrap}
+.update-info-meta .last-fetch-at{font-size:10px}
+
 /* Compact holdings cards and touch-friendly filters on phones only. */
 @media(max-width:600px){
+  .app-shell{display:block;min-height:100vh;min-height:100svh}
+  .sidebar{display:none}
+  .mobile-brand{display:flex;align-items:center;gap:9px;height:calc(48px + env(safe-area-inset-top));padding:env(safe-area-inset-top) 16px 0;background:#15282a;color:#eaf0eb}
+  .mobile-brand .brand-mark{flex:0 0 auto}
+  .mobile-brand-name{font:17px "DM Mono",monospace;letter-spacing:-1px}
+  main{width:100%;max-width:none;margin:0;padding:18px 14px calc(88px + env(safe-area-inset-bottom))}
+  header{gap:12px}
+  h1{font-size:25px}
+  .mobile-bottom-nav{position:fixed;z-index:20;inset:auto 0 0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;padding:6px 8px calc(6px + env(safe-area-inset-bottom));border-top:1px solid #395052;background:#15282a}
+  .mobile-bottom-nav .nav-item{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;width:100%;min-height:52px;padding:6px 3px;border-radius:8px;color:#bac6c4;font:500 10px/1.2 "Noto Sans JP",sans-serif;text-align:center;white-space:nowrap}
+  .mobile-bottom-nav .nav-item span{width:auto;font-size:18px;line-height:1}
+  .mobile-bottom-nav .nav-item.active{color:#fff;background:#294144}
+  .mobile-bottom-nav .nav-item:focus-visible{outline:2px solid #91d4be;outline-offset:1px}
+  .refresh-controls{width:min(100%,380px)}
+  header{flex-wrap:wrap}
+  .fx-info{align-items:flex-start}
+  .update-info-primary .button{width:40px;height:40px;padding:6px;flex:0 0 40px}
+  .update-info-meta{flex-direction:column;align-items:flex-start;gap:2px}
   #holdings-view .toolbar{display:grid;grid-template-columns:minmax(0,1fr);align-items:stretch;gap:12px}
   #holdings-view .filters{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;width:100%}
   #holdings-view .filters select{width:100%;min-width:0}
@@ -22,4 +49,20 @@
   #holdings-view .holding-quantity span{font:500 13px "DM Mono",monospace}
   #holdings-view .holding-value{grid-area:value;display:flex;justify-content:space-between;align-items:baseline;gap:12px;border-top:1px solid var(--line);padding-top:10px}
   #holdings-view .holding-value .money{font:500 17px "DM Mono",monospace;white-space:nowrap}
+
+  dialog{width:calc(100vw - 32px);max-width:calc(100vw - 32px);max-height:calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 24px);max-height:calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 24px);margin:auto;overflow-y:auto}
+  .dialog-card{width:100%;max-width:100%;min-width:0;padding:18px}
+  .dialog-card label,.dialog-card input,.dialog-card label select{min-width:0}
+  #holding-dialog #holding-account{margin-left:12px}
+  .form-row{grid-template-columns:minmax(0,1fr);gap:0}
+  .dialog-actions{flex-wrap:wrap;gap:10px}
+
+  #dashboard-holdings{display:grid;gap:10px}
+  #dashboard-holdings .holding-row{display:grid;grid-template-columns:minmax(0,1fr) 44px;grid-template-areas:"identity menu" "value value";align-items:start;gap:12px 10px;padding:14px;border:1px solid var(--line);border-radius:9px;background:#fff}
+  #dashboard-holdings .holding-identity{grid-area:identity;min-width:0;padding-right:4px}
+  #dashboard-holdings .holding-name{font-size:14px;line-height:1.45;overflow-wrap:anywhere}
+  #dashboard-holdings .holding-meta{line-height:1.5;overflow-wrap:anywhere}
+  #dashboard-holdings .holding-menu{grid-area:menu;justify-self:end;align-self:start;width:44px;height:44px;margin:-5px -6px 0 0;padding:0}
+  #dashboard-holdings .holding-value{grid-area:value;display:flex;justify-content:space-between;align-items:baseline;gap:12px;border-top:1px solid var(--line);padding-top:10px}
+  #dashboard-holdings .holding-value .money{font:500 17px "DM Mono",monospace;white-space:nowrap}
 }

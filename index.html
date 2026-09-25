@@ -2,12 +2,12 @@
 <html lang="ja">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Asset Compass | 資産管理</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Noto+Sans+JP:wght@400;500;600;700&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="styles.css?v=20260925-1" />
     <link rel="stylesheet" href="funds.css" />
   </head>
   <body>
@@ -25,10 +25,20 @@
         </div>
       </aside>
 
+      <div class="mobile-brand" aria-label="Asset Compass">
+        <span class="brand-mark">◒</span><span class="mobile-brand-name">asset compass</span>
+      </div>
+
       <main>
         <header>
           <div><p class="eyebrow" id="today"></p><h1 id="page-title">資産の全体像</h1></div>
-          <div class="refresh-controls"><small id="last-fetch-at" class="last-fetch-at"></small><button id="refresh-all" class="button primary">↻ <span>価格を更新</span></button></div>
+          <div class="refresh-controls" aria-label="更新情報">
+            <div class="update-info-primary">
+              <div class="fx-info" aria-live="polite"><span id="usd-jpy-rate" class="usd-jpy-rate">USD/JPY —</span></div>
+              <button id="refresh-all" class="button primary">↻ <span>価格を更新</span></button>
+            </div>
+            <div class="update-info-meta"><small id="usd-jpy-timestamp" class="usd-jpy-timestamp"></small><small id="last-fetch-at" class="last-fetch-at"></small></div>
+          </div>
         </header>
 
         <section id="dashboard-view" class="view active">
@@ -56,11 +66,17 @@
           <div id="accounts-list" class="account-cards"></div>
         </section>
       </main>
+
+      <nav class="mobile-bottom-nav" aria-label="スマートフォン用メインメニュー">
+        <button class="nav-item active" data-view="dashboard"><span aria-hidden="true">◫</span>ダッシュボード</button>
+        <button class="nav-item" data-view="holdings"><span aria-hidden="true">▤</span>保有資産</button>
+        <button class="nav-item" data-view="accounts"><span aria-hidden="true">◌</span>証券口座</button>
+      </nav>
     </div>
 
     <dialog id="holding-dialog"><form id="holding-form" method="dialog" class="dialog-card"><div class="dialog-heading"><div><p class="eyebrow" id="holding-form-kicker">NEW HOLDING</p><h2 id="holding-dialog-title">保有資産を追加</h2></div><button type="button" class="close" data-close="holding-dialog">×</button></div><input type="hidden" id="holding-id" /><label>証券口座<select id="holding-account" required></select></label><div class="form-row"><label>資産区分<select id="holding-type" required><option>日本株</option><option>米国株</option><option>投資信託</option></select></label><label>通貨<select id="holding-currency" required><option value="JPY">JPY</option><option value="USD">USD</option></select></label></div><label>銘柄名<input id="holding-name" placeholder="例：トヨタ自動車" required /></label><label>Yahoo Finance ティッカー<input id="holding-symbol" placeholder="例：7203.T / AAPL" required autocapitalize="characters" /><small>このティッカーで価格を自動取得します</small><button type="button" class="text-button lookup-button" id="lookup-name">銘柄情報取得</button><small id="name-lookup-status" class="lookup-status" aria-live="polite"></small></label><div class="form-row"><label><span id="quantity-label">保有数量</span><input id="holding-quantity" type="number" min="0.0001" step="any" placeholder="100" required /></label><label><span id="cost-label">取得単価</span><input id="holding-cost" type="number" min="0" step="any" placeholder="2500" required /></label></div><p id="fund-unit-note" class="fund-unit-note" hidden>投資信託の基準価額・取得基準価額は、常に <strong>1万口あたり</strong> で入力・計算します。</p><div class="dialog-actions"><button type="button" class="button ghost" data-close="holding-dialog">キャンセル</button><button class="button primary" value="default">保存する</button></div></form></dialog>
 
     <dialog id="account-dialog"><form id="account-form" method="dialog" class="dialog-card small-dialog"><div class="dialog-heading"><div><p class="eyebrow" id="account-form-kicker">NEW ACCOUNT</p><h2 id="account-dialog-title">証券口座を追加</h2></div><button type="button" class="close" data-close="account-dialog">×</button></div><input type="hidden" id="account-id" /><label>口座名<input id="account-name" placeholder="例：SBI証券" required /></label><label>メモ（任意）<input id="account-note" placeholder="例：NISA / 特定口座" /></label><div class="dialog-actions"><button type="button" class="button ghost" data-close="account-dialog">キャンセル</button><button class="button primary" value="default">保存する</button></div></form></dialog>
-    <script src="app.js?v=20260918-3"></script>
+    <script src="app.js?v=20260925-1"></script>
   </body>
 </html>
