@@ -21,7 +21,7 @@
         </nav>
         <div class="sidebar-foot">
           <p>価格データ</p><strong>Yahoo Finance</strong>
-          <small>更新は登録銘柄ごとに実行します</small><span class="brand-version">v0.2.1</span>
+          <small>更新は登録銘柄ごとに実行します</small><span class="brand-version">v0.2.2</span>
         </div>
       </aside>
 
@@ -68,8 +68,8 @@
             </div>
             <div class="asset-trend-content">
               <div class="asset-trend-summary">
-                <div><small>最新の総資産額</small><strong id="asset-trend-latest">—</strong></div>
                 <div class="asset-trend-delta"><small>前回比</small><strong id="asset-trend-delta">—</strong></div>
+                <span id="asset-trend-delta-rate" class="asset-trend-rate">—</span>
               </div>
               <div class="asset-trend-chart-wrap">
                 <p id="asset-trend-message" class="asset-trend-message">読み込み中…</p>
@@ -96,7 +96,7 @@
         <section id="holdings-view" class="view">
           <div class="toolbar"><div class="filters"><select id="filter-account"><option value="all">すべての口座</option></select><select id="filter-type"><option value="all">すべての資産</option><option value="日本株">日本株</option><option value="米国株">米国株</option><option value="投資信託">投資信託</option></select></div><button class="button primary" id="add-holding">＋ 保有資産を追加</button></div>
           <section class="panel table-panel"><div id="holdings-table"></div></section>
-          <p class="hint">ヒント：日本株は <code>7203.T</code>、米国株は <code>AAPL</code>、投資信託は <code>03311187</code> のような8桁の投信コードを入力します。</p>
+          <p class="hint">ヒント：日本株は <code>7203</code>、米国株は <code>AAPL</code>、投資信託は <code>03311187</code> のような8桁の投信コードを入力します。</p>
         </section>
 
         <section id="accounts-view" class="view">
@@ -123,9 +123,10 @@
       </nav>
     </div>
 
-    <dialog id="holding-dialog"><form id="holding-form" method="dialog" class="dialog-card"><div class="dialog-heading"><div><p class="eyebrow" id="holding-form-kicker">NEW HOLDING</p><h2 id="holding-dialog-title">保有資産を追加</h2></div><button type="button" class="close" data-close="holding-dialog">×</button></div><input type="hidden" id="holding-id" /><label>証券口座<select id="holding-account" required></select></label><label>口座区分<select id="holding-account-category" required></select></label><div class="form-row"><label>資産区分<select id="holding-type" required><option>日本株</option><option>米国株</option><option>投資信託</option></select></label><label>通貨<select id="holding-currency" required><option value="JPY">JPY</option><option value="USD">USD</option></select></label></div><label>銘柄名<input id="holding-name" placeholder="例：トヨタ自動車" required /></label><label>Yahoo Finance ティッカー<input id="holding-symbol" placeholder="例：7203.T / AAPL" required autocapitalize="characters" /><small>このティッカーで価格を自動取得します</small><button type="button" class="text-button lookup-button" id="lookup-name">銘柄情報取得</button><small id="name-lookup-status" class="lookup-status" aria-live="polite"></small></label><div class="form-row"><label><span id="quantity-label">保有数量</span><input id="holding-quantity" type="number" inputmode="decimal" min="0.0001" step="any" placeholder="100" required /></label><label><span id="cost-label">取得単価</span><input id="holding-cost" type="number" inputmode="decimal" min="0" step="any" placeholder="2500" required /></label></div><p id="fund-unit-note" class="fund-unit-note" hidden>投資信託の基準価額・取得基準価額は、常に <strong>1万口あたり</strong> で入力・計算します。</p><div class="dialog-actions"><button type="button" class="button ghost" data-close="holding-dialog">キャンセル</button><button class="button primary" value="default">保存する</button></div></form></dialog>
+    <dialog id="holding-dialog"><form id="holding-form" method="dialog" class="dialog-card"><div class="dialog-heading"><div><p class="eyebrow" id="holding-form-kicker">NEW HOLDING</p><h2 id="holding-dialog-title">保有資産を追加</h2></div><button type="button" class="close" data-close="holding-dialog">×</button></div><input type="hidden" id="holding-id" /><label>証券口座<select id="holding-account" required></select></label><label>口座区分<select id="holding-account-category" required></select></label><div class="form-row"><label>資産区分<select id="holding-type" required><option>日本株</option><option>米国株</option><option>投資信託</option></select></label><label>通貨<select id="holding-currency" required><option value="JPY">JPY</option><option value="USD">USD</option></select></label></div><label>銘柄名<input id="holding-name" placeholder="例：トヨタ自動車" required /></label><label>Yahoo Finance ティッカー<input id="holding-symbol" placeholder="例：7203 / AAPL" required autocapitalize="characters" /><small>このティッカーで価格を自動取得します</small><button type="button" class="text-button lookup-button" id="lookup-name">銘柄情報取得</button><small id="name-lookup-status" class="lookup-status" aria-live="polite"></small></label><div class="form-row"><label><span id="quantity-label">保有数量</span><input id="holding-quantity" type="number" inputmode="decimal" min="0.0001" step="any" placeholder="100" required /></label><label><span id="cost-label">取得単価</span><input id="holding-cost" type="number" inputmode="decimal" min="0" step="any" placeholder="2500" required /></label></div><p id="fund-unit-note" class="fund-unit-note" hidden>投資信託の基準価額・取得基準価額は、常に <strong>1万口あたり</strong> で入力・計算します。</p><div class="dialog-actions"><button type="button" class="button ghost" data-close="holding-dialog">キャンセル</button><button class="button primary" value="default">保存する</button></div></form></dialog>
 
     <dialog id="account-dialog"><form id="account-form" method="dialog" class="dialog-card small-dialog"><div class="dialog-heading"><div><p class="eyebrow" id="account-form-kicker">NEW ACCOUNT</p><h2 id="account-dialog-title">証券口座を追加</h2></div><button type="button" class="close" data-close="account-dialog">×</button></div><input type="hidden" id="account-id" /><label>口座名<input id="account-name" placeholder="例：SBI証券" required /></label><label>メモ（任意）<input id="account-note" placeholder="例：NISA / 特定口座" /></label><div class="dialog-actions"><button type="button" class="button ghost" data-close="account-dialog">キャンセル</button><button class="button primary" value="default">保存する</button></div></form></dialog>
-    <script src="app.js?v=20260926-1"></script>
+    <script src="symbols.js?v=20260927-1"></script>
+    <script src="app.js?v=20260927-1"></script>
   </body>
 </html>

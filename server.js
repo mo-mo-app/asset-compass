@@ -3,12 +3,13 @@ const fs = require("fs");
 const path = require("path");
 const os = require("os");
 const { stockQuoteFromChart, fundPreviousClose } = require("./quote-data");
+const { toQuoteSymbol } = require("./symbols");
 const { getState, getSnapshots, migrateLocalState, saveState } = require("./database");
 const root = __dirname;
 let migration = null;
 const port = Number(process.env.ASSET_COMPASS_PORT) || 8766;
 const bindLan = process.env.ASSET_COMPASS_BIND_LAN !== "false";
-const publicFiles = new Set(["index.html", "app.js", "styles.css", "funds.css"]);
+const publicFiles = new Set(["index.html", "app.js", "symbols.js", "styles.css", "funds.css"]);
 
 const contentTypes = {".html":"text/html; charset=utf-8",".js":"text/javascript; charset=utf-8",".css":"text/css; charset=utf-8"};
 const send = (res, status, body, type="application/json; charset=utf-8") => {
@@ -66,17 +67,19 @@ function isValidSnapshotDate(value) {
   candidate.setUTCFullYear(year, month - 1, day);
   return candidate.getUTCFullYear() === year && candidate.getUTCMonth() === month - 1 && candidate.getUTCDate() === day;
 }
-async function quote(symbol) {
-  if (!/^[A-Z0-9.=^\-]+$/i.test(symbol)) throw new Error("Invalid symbol");
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=1mo&interval=1d`;
+async function quote(symbol, type) {
+  const quoteSymbol = toQuoteSymbol(type, symbol);
+  if (!/^[A-Z0-9.=^\-]+$/i.test(quoteSymbol)) throw new Error("Invalid symbol");
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(quoteSymbol)}?range=1mo&interval=1d`;
   const response = await fetch(url, {headers:{"User-Agent":"AssetCompass/1.0"}});
   if (!response.ok) throw new Error(`Yahoo Finance returned ${response.status}`);
   const result = (await response.json()).chart?.result?.[0];
   return stockQuoteFromChart(result);
 }
-async function stockName(symbol) {
-  if (!/^[A-Z0-9.=^\-]+$/i.test(symbol)) throw new Error("Invalid symbol");
-  const response = await fetch(`https://finance.yahoo.co.jp/quote/${encodeURIComponent(symbol)}`, {headers:{"User-Agent":"Mozilla/5.0 (Asset Compass)"}});
+async function stockName(symbol, type) {
+  const quoteSymbol = toQuoteSymbol(type, symbol);
+  if (!/^[A-Z0-9.=^\-]+$/i.test(quoteSymbol)) throw new Error("Invalid symbol");
+  const response = await fetch(`https://finance.yahoo.co.jp/quote/${encodeURIComponent(quoteSymbol)}`, {headers:{"User-Agent":"Mozilla/5.0 (Asset Compass)"}});
   if (!response.ok) throw new Error("Yahoo!ファイナンスで銘柄コードが見つかりません");
   const html = await response.text();
   const title = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1];
@@ -142,11 +145,11 @@ const handleRequest = async (req, res) => {
     } catch (error) { return apiError(res, error); }
   }
   if (url.pathname === "/api/name") {
-    try { return send(res, 200, await stockName(url.searchParams.get("symbol") || "")); }
+    try { return send(res, 200, await stockName(url.searchParams.get("symbol") || "", url.searchParams.get("type"))); }
     catch (error) { return send(res, 502, {error:error.message}); }
   }
   if (url.pathname === "/api/quote") {
-    try { const symbol=url.searchParams.get("symbol") || ""; const type=url.searchParams.get("type"); return send(res, 200, type === "投資信託" ? await fundQuote(symbol) : await quote(symbol)); }
+    try { const symbol=url.searchParams.get("symbol") || ""; const type=url.searchParams.get("type"); return send(res, 200, type === "投資信託" ? await fundQuote(symbol) : await quote(symbol, type)); }
     catch (error) { return send(res, 502, {error:error.message}); }
   }
   if (url.pathname === "/api/migrate" && req.method === "POST") {

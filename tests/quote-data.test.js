@@ -59,6 +59,7 @@ function appContext(fetch) {
   const context = vm.createContext({
     Intl, console, fetch, localStorage: { getItem: () => '{"accounts":[],"holdings":[]}' }
   });
+  vm.runInContext(fs.readFileSync(path.join(__dirname, "..", "symbols.js"), "utf8"), context);
   const source = fs.readFileSync(path.join(__dirname, "..", "app.js"), "utf8");
   // Load declarations only; no boot, UI events or production API calls.
   vm.runInContext(source.slice(0, source.indexOf('document.addEventListener("click"')), context);

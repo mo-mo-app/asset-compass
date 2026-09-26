@@ -1,6 +1,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { DatabaseSync } = require("node:sqlite");
+const { normalizeStoredSymbol, sameHoldingSlot } = require("./symbols");
 
 const databasePath = process.env.ASSET_COMPASS_DB_PATH || path.join(__dirname, "data", "asset-compass.sqlite");
 fs.mkdirSync(path.dirname(databasePath), { recursive: true });
@@ -264,7 +265,7 @@ function normalizeState(input, existingCategories = new Map()) {
     return {
       id, accountId, accountCategoryCode, type, currency,
       name: requiredText(holding?.name, `${field}.name`),
-      symbol: requiredText(holding?.symbol, `${field}.symbol`),
+      symbol: requiredText(normalizeStoredSymbol(type, requiredText(holding?.symbol, `${field}.symbol`)), `${field}.symbol`),
       quantity: holding.quantity, cost: holding.cost, price, previousClose, quoteStatus, quoteAttemptedAt,
       priceTimestamp: optionalTimestamp(holding.priceTimestamp, `${field}.priceTimestamp`),
       priceDate
@@ -332,7 +333,7 @@ function getState() {
     FROM holdings h LEFT JOIN holding_quotes q ON q.holding_id = h.id ORDER BY h.rowid
   `).all().map(row => ({
     id: row.id, accountId: row.account_id, accountCategoryCode: row.account_category_code, type: row.type, currency: row.currency,
-    name: row.name, symbol: row.symbol, quantity: row.quantity, cost: row.cost,
+    name: row.name, symbol: normalizeStoredSymbol(row.type, row.symbol), quantity: row.quantity, cost: row.cost,
     price: row.price ?? null, previousClose: row.previous_close ?? null,
     priceTimestamp: row.price_timestamp ?? null, priceDate: row.price_date ?? null,
     quoteStatus: row.quote_status, quoteAttemptedAt: row.quote_attempted_at ?? null
@@ -494,9 +495,20 @@ function saveState(expectedRevision, input, snapshotMetadata = null) {
     const current = db.prepare("SELECT revision, initialized FROM app_state WHERE singleton_id = 1").get();
     if (!current.initialized) return { notInitialized: true, state: getState() };
     if (current.revision !== expectedRevision) return { conflict: true, state: getState() };
-    const existingCategories = new Map(db.prepare("SELECT id, account_category_code FROM holdings").all()
-      .map(row => [row.id, row.account_category_code]));
+    const existingHoldings = db.prepare(`
+      SELECT id, account_id AS accountId, account_category_code AS accountCategoryCode, type, symbol FROM holdings
+    `).all();
+    const existingCategories = new Map(existingHoldings.map(row => [row.id, row.accountCategoryCode]));
     const data = normalizeState(input, existingCategories);
+    const existingById = new Map(existingHoldings.map(holding => [holding.id, holding]));
+    const submittedIds = new Set(data.holdings.map(holding => holding.id));
+    const effectiveHoldings = data.holdings.concat(existingHoldings.filter(holding => !submittedIds.has(holding.id)));
+    for (const holding of data.holdings) {
+      if (holding.type !== "日本株" || (existingById.has(holding.id) && sameHoldingSlot(existingById.get(holding.id), holding))) continue;
+      if (effectiveHoldings.some(other => other.id !== holding.id && other.type === "日本株" && sameHoldingSlot(other, holding))) {
+        throw new Error("The same Japanese stock is already registered in this account and category.");
+      }
+    }
     upsertState(data);
     db.prepare("UPDATE app_state SET initialized = 1, revision = revision + 1, updated_at = ? WHERE singleton_id = 1").run(Date.now());
     const snapshot = snapshotMetadata === null ? null : saveDailySnapshot(data, snapshotMetadata);

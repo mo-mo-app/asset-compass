@@ -93,6 +93,7 @@ test("SQLite state API migrates once, saves by revision, rejects stale writes, a
   assert.equal(migrated.accountsCount, 1);
   assert.equal(migrated.holdingsCount, 3);
   assert.equal(migrated.data.holdings[1].priceDate, "9/25");
+  assert.equal(migrated.data.holdings[2].symbol, "9999", "legacy .T symbols are normalized during import");
   assert.equal(migrated.data.holdings[0].previousClose, null, "legacy fallback values are unverified");
   assert.equal(migrated.data.holdings[0].quoteStatus, "unknown");
   assert.ok(migrated.data.holdings.every(holding => holding.accountCategoryCode === "unassigned"));
@@ -108,6 +109,7 @@ test("SQLite state API migrates once, saves by revision, rejects stale writes, a
   assert.equal(saved.revision, 2);
   assert.equal(saved.data.accounts[0].name, "SBI証券（更新）");
   assert.equal(saved.data.holdings[0].quantity, 3);
+  assert.equal(saved.data.holdings[2].symbol, "9999");
 
   const noSnapshotDb = new DatabaseSync(dbPath);
   assert.equal(noSnapshotDb.prepare("SELECT count(*) AS count FROM daily_asset_snapshots").get().count, 0, "ordinary account/holding saves must not create snapshots");
@@ -298,6 +300,7 @@ test("SQLite state API migrates once, saves by revision, rejects stale writes, a
   const oldClientData = structuredClone(categorized.data);
   oldClientData.holdings.forEach(holding => delete holding.accountCategoryCode);
   oldClientData.holdings[0].quantity = 4;
+  oldClientData.holdings.find(holding => holding.id === "holding-3").symbol = "9999.t";
   const oldClientResponse = await fetch(`${base}/api/v1/state`, {
     method: "PUT", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ expectedRevision: 5, data: oldClientData })
@@ -306,6 +309,13 @@ test("SQLite state API migrates once, saves by revision, rejects stale writes, a
   const oldClientSaved = await oldClientResponse.json();
   assert.equal(oldClientSaved.data.holdings[0].accountCategoryCode, "nisa_growth");
   assert.equal(oldClientSaved.data.holdings[0].quantity, 4);
+  assert.equal(oldClientSaved.data.holdings.find(holding => holding.id === "holding-3").symbol, "9999");
+  assert.equal(oldClientSaved.data.holdings.find(holding => holding.id === "holding-3").price, 2500);
+  assert.equal(oldClientSaved.data.holdings.find(holding => holding.id === "holding-3").previousClose, 2450);
+  const normalizedDb = new DatabaseSync(dbPath);
+  assert.equal(normalizedDb.prepare("SELECT symbol FROM holdings WHERE id = 'holding-3'").get().symbol, "9999");
+  assert.equal(normalizedDb.prepare("SELECT price FROM holding_quotes WHERE holding_id = 'holding-3'").get().price, 2500);
+  normalizedDb.close();
   assert.equal(oldClientSaved.data.holdings.find(holding => holding.id === "holding-new").accountCategoryCode, "unassigned");
   assert.equal(oldClientSaved.data.holdings.find(holding => holding.id === "holding-same-symbol").accountCategoryCode, "nisa_tsumitate");
   const staleCategoryResponse = await fetch(`${base}/api/v1/state`, {
@@ -349,8 +359,14 @@ test("SQLite state API migrates once, saves by revision, rejects stale writes, a
   assert.equal(upgradedDb.prepare("SELECT previous_close FROM holding_quotes").get().previous_close, null);
   assert.equal(upgradedDb.prepare("SELECT quote_status FROM holdings").get().quote_status, "unknown");
   assert.equal(upgradedDb.prepare("SELECT account_category_code FROM holdings").get().account_category_code, "unassigned");
+  assert.equal(upgradedDb.prepare("SELECT symbol FROM holdings").get().symbol, "7203.T", "schema upgrade does not rewrite holdings");
   assert.equal(upgradedDb.prepare("SELECT count(*) AS count FROM daily_asset_snapshots").get().count, 0);
   upgradedDb.close();
+  const legacyRead = spawnSync(process.execPath, ["-e", "process.stdout.write(require('./database').getState().data.holdings[0].symbol)"], {
+    cwd: projectRoot, env: { ...process.env, ASSET_COMPASS_DB_PATH: legacyDbPath }
+  });
+  assert.equal(legacyRead.status, 0, legacyRead.stderr.toString());
+  assert.equal(legacyRead.stdout.toString(), "7203", "GET state exposes a canonical symbol without rewriting the old DB row");
 });
 
 test("v3 upgrade preserves accounts, quotes, FX, snapshots and revision", () => {

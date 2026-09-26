@@ -1,5 +1,6 @@
 const KEY = "asset-compass-v1";
 const LOCAL_BACKUP_KEY = "asset-compass-v1-pre-sync-backup";
+const { normalizeStoredSymbol, displaySymbol, sameHoldingSlot } = AssetCompassSymbols;
 const yen = new Intl.NumberFormat("ja-JP", { style: "currency", currency: "JPY", maximumFractionDigits: 0 });
 const number = new Intl.NumberFormat("ja-JP", { maximumFractionDigits: 2 });
 function generateId() {
@@ -227,7 +228,7 @@ function renderAllocation(total) {
     const percentage = value / total * 100;
     return `<li class="allocation-legend-row"><span class="allocation-legend-name"><i style="--allocation-color:${colors[index]}"></i>${type}</span><span class="allocation-legend-values"><b>${percentage.toFixed(1)}%</b><small>${yen.format(value)}</small></span></li>`;
   }).join("");
-  $("#allocation").innerHTML = `<div class="allocation-chart-layout"><div class="allocation-donut" role="img" aria-label="資産配分 ${types.map(([type, value]) => `${type} ${(value / total * 100).toFixed(1)}%`).join("、")}" style="--allocation-chart:conic-gradient(${segments})"><div class="allocation-donut-center"><small>総資産評価額</small><b>${yen.format(total)}</b></div></div><ul class="allocation-legend">${details}</ul></div>`;
+  $("#allocation").innerHTML = `<div class="allocation-chart-layout"><div class="allocation-donut" role="img" aria-label="資産配分 ${types.map(([type, value]) => `${type} ${(value / total * 100).toFixed(1)}%`).join("、")}" style="--allocation-chart:conic-gradient(${segments})"><div class="allocation-donut-center"><small>構成比</small></div></div><ul class="allocation-legend">${details}</ul></div>`;
 }
 function renderAccountSummary() {
   const rows = data.accounts.map(a => { const hs=data.holdings.filter(h=>h.accountId===a.id), valued=hs.filter(hasValuation); return `<div class="account-summary-row"><span>${escapeHTML(a.name)}</span><b>${valued.length ? yen.format(valued.reduce((n,h) => n + valueOf(h),0)) : "—"}</b></div>`; }).join("");
@@ -237,7 +238,7 @@ function renderAccountSummary() {
 function groupHeatmapHoldings(holdings) {
   const groups = new Map();
   for (const holding of holdings) {
-    const key = `${holding.type}\u0000${holding.currency}\u0000${String(holding.symbol || "").trim().toUpperCase()}`;
+    const key = `${holding.type}\u0000${holding.currency}\u0000${normalizeStoredSymbol(holding.type, holding.symbol).toUpperCase()}`;
     if (!groups.has(key)) groups.set(key, { representative: holding, valueJpy: 0, valuedCount: 0, holdingCount: 0, changes: [], hasFailed: false });
     const group = groups.get(key);
     group.holdingCount++;
@@ -269,26 +270,6 @@ function groupHeatmapHoldings(holdings) {
     });
 }
 
-function heatmapSpansForRow(row) {
-  const columns = 16;
-  const minimumSpan = 2;
-  const spans = row.map(() => minimumSpan);
-  let remaining = columns - spans.length * minimumSpan;
-  if (remaining <= 0) return spans;
-  const weights = row.map(item => item.valueJpy ** 0.75);
-  const weightTotal = weights.reduce((sum, weight) => sum + weight, 0);
-  const shares = weights.map(weight => remaining * weight / weightTotal);
-  shares.forEach((share, index) => {
-    const whole = Math.floor(share);
-    spans[index] += whole;
-    remaining -= whole;
-  });
-  const order = shares.map((share, index) => ({ index, remainder: share - Math.floor(share), value: row[index].valueJpy }))
-    .sort((a, b) => b.remainder - a.remainder || b.value - a.value);
-  for (let i = 0; i < remaining; i++) spans[order[i].index]++;
-  return spans;
-}
-
 function heatmapMovementClass(changePercent) {
   if (changePercent === null || !Number.isFinite(changePercent)) return "unknown";
   const magnitude = Math.abs(changePercent);
@@ -298,21 +279,16 @@ function heatmapMovementClass(changePercent) {
 }
 
 function renderHeatmapTiles(groups, { fullTypes = false } = {}) {
-  const rows = [];
-  for (let index = 0; index < groups.length; index += 4) rows.push(groups.slice(index, index + 4));
-  const html = rows.map(row => {
-    const spans = heatmapSpansForRow(row);
-    return row.map((group, index) => {
-      const holding = group.representative;
-      const symbol = String(holding.symbol || holding.name || "—").trim();
-      const change = group.changePercent === null ? "—" : `${group.changePercent > 0 ? "+" : ""}${group.changePercent.toFixed(1)}%`;
-      const kind = fullTypes ? holding.type : holding.type === "投資信託" ? "投信" : holding.type;
-      const name = `${holding.name || symbol}（${symbol}）`;
-      const changeLabel = group.changePercent === null ? "本日の騰落率は不明" : `本日の騰落率 ${change}`;
-      return `<article class="heatmap-tile" role="group" aria-label="${escapeHTML(name)}・${yen.format(group.valueJpy)}・${changeLabel}" data-movement="${heatmapMovementClass(group.changePercent)}" data-size="${spans[index] <= 3 ? "small" : "large"}" data-span="${spans[index]}" style="grid-column:span ${spans[index]}" title="${escapeHTML(name)}・${yen.format(group.valueJpy)}・${changeLabel}"><span class="heatmap-symbol">${escapeHTML(symbol)}</span><strong class="heatmap-change">${change}</strong><small class="heatmap-type">${escapeHTML(kind)}</small></article>`;
-    }).join("");
+  return groups.map(group => {
+    const holding = group.representative;
+    const symbol = displaySymbol(holding.type, holding.symbol || holding.name || "—");
+    const label = holding.type === "投資信託" ? String(holding.name || "").trim() || symbol : symbol;
+    const change = group.changePercent === null ? "—" : `${group.changePercent > 0 ? "+" : ""}${group.changePercent.toFixed(1)}%`;
+    const kind = fullTypes ? holding.type : holding.type === "投資信託" ? "投信" : holding.type;
+    const name = `${holding.name || symbol}（${symbol}）`;
+    const changeLabel = group.changePercent === null ? "本日の騰落率は不明" : `本日の騰落率 ${change}`;
+    return `<article class="heatmap-tile" role="group" aria-label="${escapeHTML(name)}・${yen.format(group.valueJpy)}・${changeLabel}" data-movement="${heatmapMovementClass(group.changePercent)}" title="${escapeHTML(name)}・${yen.format(group.valueJpy)}・${changeLabel}"><span class="heatmap-symbol">${escapeHTML(label)}</span><strong class="heatmap-change">${change}</strong><small class="heatmap-type">${escapeHTML(kind)}</small></article>`;
   }).join("");
-  return html;
 }
 
 function treemapAreaShares(groups) {
@@ -383,7 +359,7 @@ function renderHeatmapTreemap(groups) {
   const rectangles = binaryTreemap(groups, aspectRatio);
   const tiles = rectangles.map(rectangle => {
     const holding = rectangle.group.representative;
-    const symbol = String(holding.symbol || holding.name || "—").trim();
+    const symbol = displaySymbol(holding.type, holding.symbol || holding.name || "—");
     const isFund = holding.type === "投資信託";
     const primaryLabel = isFund ? String(holding.name || symbol).trim() : symbol;
     const change = rectangle.group.changePercent === null ? "—" : `${rectangle.group.changePercent > 0 ? "+" : ""}${rectangle.group.changePercent.toFixed(1)}%`;
@@ -435,28 +411,43 @@ function renderAssetHeatmapDetail(groups) {
   const tiles = valuedGroups.length ? renderHeatmapTreemap(valuedGroups) : `<p class="asset-heatmap-message">評価額のある銘柄はありません</p>`;
   const unvalued = unvaluedGroups.length ? `<section class="heatmap-unvalued"><h3>評価額未取得・0円 <small>${unvaluedGroups.length}銘柄</small></h3><ul>${unvaluedGroups.map(group => {
     const holding = group.representative;
-    const symbol = String(holding.symbol || holding.name || "—").trim();
+    const symbol = displaySymbol(holding.type, holding.symbol || holding.name || "—");
     const kind = holding.type === "投資信託" ? "投信" : holding.type;
     return `<li><span><strong>${escapeHTML(symbol)}</strong><small>${escapeHTML(holding.name || symbol)} · ${escapeHTML(kind)}</small></span><b>評価額 —</b></li>`;
   }).join("")}</ul></section>` : "";
   container.className = "heatmap-detail-content";
   container.innerHTML = `${tiles}${unvalued}`;
 }
+function renderHoldingRateBadge(rate) {
+  const rateStyle = !Number.isFinite(rate) || Math.abs(rate) < 0.005 ? "neutral" : gainClass(rate);
+  const rateText = !Number.isFinite(rate) ? "—" : rateStyle === "neutral" ? "0.00%" : `${rate > 0 ? "+" : ""}${rate.toFixed(2)}%`;
+  const largeRateClass = Number.isFinite(rate) && Math.abs(rate) >= 1000 ? " is-large-value" : "";
+  return `<span class="dashboard-holding-rate-badge${largeRateClass}" data-change="${rateStyle}">${rateText}</span>`;
+}
 function holdingRow(h, compact = false) {
   const value = valueOf(h), gain = hasValuation(h) ? value - costOf(h) : null, rate = gain !== null && costOf(h) ? gain / costOf(h) * 100 : null;
   const marketDate = h.type === "投資信託" ? formatFundDate(h.priceDate) : formatDateTime(h.priceTimestamp);
   const marketLabel = h.type === "投資信託" ? "基準日" : "価格日時";
   const quantityLabel = h.type === "投資信託" ? "保有口数" : "保有数量";
-  return `<div class="holding-row"><div class="holding-identity"><div class="holding-name">${escapeHTML(h.name)}</div><div class="holding-meta">${escapeHTML(h.symbol)} · ${escapeHTML(account(h.accountId)?.name || "—")}</div>${marketDate ? `<div class="holding-updated">${marketLabel} ${marketDate}</div>` : ""}</div><div class="holding-cell optional holding-current"><small>現在値</small><span class="money">${hasQuote(h) ? number.format(h.price) + " " + h.currency : "未取得"}</span></div><div class="holding-cell holding-value ${compact ? 'hide-mobile' : ''}"><small>評価額</small><span class="money">${value !== null ? yen.format(value) : "—"}</span></div><div class="holding-cell optional holding-gain"><small>評価損益</small><span class="gain ${gainClass(gain || 0)}">${gain !== null ? `${signed(gain)}<br>${rate.toFixed(2)}%` : "—"}</span></div><div class="holding-cell holding-type ${compact ? 'hide-mobile' : ''}"><small>資産区分</small><span>${h.type}</span></div><button class="icon-button holding-menu" data-edit-holding="${h.id}" aria-label="編集">⋮</button><div class="holding-cell holding-quantity"><small>${quantityLabel}</small><span>${number.format(h.quantity)}</span></div></div>`;
+  return `<div class="holding-row"><div class="holding-identity"><div class="holding-name">${escapeHTML(h.name)}</div><div class="holding-meta">${escapeHTML(displaySymbol(h.type, h.symbol))} · ${escapeHTML(account(h.accountId)?.name || "—")}</div>${marketDate ? `<div class="holding-updated">${marketLabel} ${marketDate}</div>` : ""}</div><div class="holding-cell optional holding-current"><small>現在値</small><span class="money">${hasQuote(h) ? number.format(h.price) + " " + h.currency : "未取得"}</span></div><div class="holding-cell holding-value ${compact ? 'hide-mobile' : ''}"><small>評価額</small><span class="money">${value !== null ? yen.format(value) : "—"}</span></div><div class="holding-cell optional holding-gain"><small>評価損益</small><span class="gain ${gainClass(gain || 0)}">${gain !== null ? signed(gain) : "—"}</span></div><div class="holding-cell optional holding-rate"><small>評価損益率</small>${renderHoldingRateBadge(rate)}</div><div class="holding-cell holding-type ${compact ? 'hide-mobile' : ''}"><small>資産区分</small><span>${h.type}</span></div><button class="icon-button holding-menu" data-edit-holding="${h.id}" aria-label="編集">⋮</button><div class="holding-cell holding-quantity"><small>${quantityLabel}</small><span>${number.format(h.quantity)}</span></div></div>`;
 }
-function renderDashboardHoldings() { $("#dashboard-holdings").innerHTML = data.holdings.length ? data.holdings.slice(0,5).map(h => holdingRow(h,true)).join("") : `<div class="empty-state" style="height:100px">まだ保有資産がありません</div>`; }
+function dashboardHoldingRow(h) {
+  const value = valueOf(h), cost = costOf(h);
+  const gain = hasValuation(h) ? value - cost : null;
+  const rate = gain !== null && cost ? gain / cost * 100 : null;
+  const symbol = displaySymbol(h.type, h.symbol);
+  const mobileName = h.type === "投資信託" ? h.name || symbol : symbol || h.name;
+  const gainStyle = gainClass(gain || 0);
+  return `<div class="dashboard-holding"><div class="dashboard-holding-identity"><div class="dashboard-holding-name">${escapeHTML(h.name)}</div><div class="dashboard-holding-meta">${escapeHTML(symbol)} · ${escapeHTML(account(h.accountId)?.name || "—")}</div></div><div class="dashboard-holding-mobile-name">${escapeHTML(mobileName)}</div><div class="dashboard-holding-current"><small>現在値</small><span>${hasQuote(h) ? `${number.format(h.price)} ${escapeHTML(h.currency)}` : "未取得"}</span></div><div class="dashboard-holding-value"><small>評価額</small><span>${value !== null ? yen.format(value) : "—"}</span></div><div class="dashboard-holding-gain"><div class="dashboard-holding-gain-amount"><small>評価損益</small><span class="${gainStyle}">${gain !== null ? signed(gain) : "—"}</span></div><div class="dashboard-holding-gain-rate"><small>評価損益率</small>${renderHoldingRateBadge(rate)}</div></div><div class="dashboard-holding-type">${escapeHTML(h.type)}</div></div>`;
+}
+function renderDashboardHoldings() { $("#dashboard-holdings").innerHTML = data.holdings.length ? sortHoldingsForList(data.holdings).slice(0,5).map(({ holding }) => dashboardHoldingRow(holding)).join("") : `<div class="empty-state" style="height:100px">まだ保有資産がありません</div>`; }
 function sortHoldingsForList(holdings) {
   const accountOrder = new Map(data.accounts.map((item, index) => [item.id, index]));
   const categories = data.accountCategories || [];
   const categoryOrder = new Map(categories.map((item, index) => [item.code, { sortOrder: item.sortOrder, index }]));
   const typeOrder = new Map(["米国株", "日本株", "投資信託"].map((type, index) => [type, index]));
   return holdings.map((holding, index) => {
-    const symbol = String(holding.symbol || "").trim().toUpperCase();
+    const symbol = normalizeStoredSymbol(holding.type, holding.symbol).toUpperCase();
     return { holding, index, symbol,
       categoryCode: holding.accountCategoryCode || "unassigned" };
   }).sort((a, b) => {
@@ -508,7 +499,7 @@ function renderHoldingsTable() {
     }
     return headings + holdingRow(holding);
   }).join("");
-  container.innerHTML = `<div class="holding-row table-head"><div>銘柄 / 口座</div><div class="optional">現在値</div><div>評価額</div><div class="optional">評価損益</div><div>資産区分</div><div></div></div>${rows}`;
+  container.innerHTML = `<div class="holding-row table-head"><div>銘柄 / 口座</div><div class="optional">現在値</div><div>評価額</div><div class="optional">評価損益</div><div class="optional holding-rate">評価損益率</div><div>資産区分</div><div></div></div>${rows}`;
 }
 function formatDateTime(timestamp) {
   if (!Number.isFinite(timestamp) || timestamp <= 0) return "";
@@ -547,21 +538,26 @@ function renderAssetTrend(response) {
   const latest = series.filter(point => point.valueJpy !== null);
   const latestPoint = latest[latest.length - 1] || null;
   const previousPoint = latest.length > 1 ? latest[latest.length - 2] : null;
-  const latestValue = $("#asset-trend-latest");
   const deltaValue = $("#asset-trend-delta");
+  const deltaRate = $("#asset-trend-delta-rate");
   const message = $("#asset-trend-message");
   const chart = $("#asset-trend-chart");
   const lines = $("#asset-trend-lines");
   const markers = $("#asset-trend-points");
 
-  latestValue.textContent = latestPoint ? yen.format(latestPoint.valueJpy) : "—";
   deltaValue.className = "";
+  deltaRate.className = "asset-trend-rate";
   if (previousPoint) {
     const delta = latestPoint.valueJpy - previousPoint.valueJpy;
     deltaValue.textContent = delta > 0 ? `+${yen.format(delta)}` : delta < 0 ? `-${yen.format(Math.abs(delta))}` : yen.format(0);
-    deltaValue.className = delta > 0 ? "positive" : delta < 0 ? "negative" : "";
+    const changeClass = delta > 0 ? "positive" : delta < 0 ? "negative" : "";
+    deltaValue.className = changeClass;
+    deltaRate.className = `asset-trend-rate${changeClass ? ` ${changeClass}` : ""}`;
+    const rate = previousPoint.valueJpy > 0 ? delta / previousPoint.valueJpy * 100 : null;
+    deltaRate.textContent = rate === null ? "—" : `${rate > 0 ? "+" : ""}${rate.toFixed(2)}%`;
   } else {
     deltaValue.textContent = "—";
+    deltaRate.textContent = "—";
   }
 
   const rangeEnd = typeof response?.to === "string" ? response.to : series[series.length - 1]?.date;
@@ -623,8 +619,10 @@ async function loadAssetTrend({ refresh = false } = {}) {
     } catch {
       if (snapshotResponseCache) renderAssetTrend(snapshotResponseCache);
       else {
-        $("#asset-trend-latest").textContent = "—";
         $("#asset-trend-delta").textContent = "—";
+        $("#asset-trend-delta-rate").textContent = "—";
+        $("#asset-trend-delta").className = "";
+        $("#asset-trend-delta-rate").className = "asset-trend-rate";
         $("#asset-trend-chart").hidden = true;
         $("#asset-trend-message").hidden = false;
         $("#asset-trend-message").textContent = "資産推移を読み込めませんでした";
@@ -643,11 +641,13 @@ function renderAccounts() {
 function renderAccountOptions() { const current = $("#filter-account").value; $("#filter-account").innerHTML = `<option value="all">すべての口座</option>${data.accounts.map(a=>`<option value="${a.id}">${escapeHTML(a.name)}</option>`).join("")}`; $("#filter-account").value = current; }
 function escapeHTML(s) { const d=document.createElement("div"); d.textContent=s; return d.innerHTML; }
 function updateHoldingFormLabels() {
-  const isFund = $("#holding-type").value === "投資信託";
+  const type = $("#holding-type").value;
+  const isFund = type === "投資信託";
   $("#quantity-label").textContent = isFund ? "保有口数" : "保有数量";
   $("#cost-label").textContent = isFund ? "取得基準価額（1万口あたり）" : "取得単価";
   $("#holding-quantity").placeholder = isFund ? "例：150000" : "例：100";
   $("#holding-cost").placeholder = isFund ? "例：10000" : "例：2500";
+  $("#holding-symbol").placeholder = isFund ? "例：03311187" : type === "日本株" ? "例：7203 / 563A" : "例：AAPL";
   $("#fund-unit-note").hidden = !isFund;
 }
 function openHolding(id) {
@@ -656,18 +656,19 @@ function openHolding(id) {
   categorySelect.replaceChildren(...(data.accountCategories || []).map(category => new Option(category.label, category.code)));
   if (!categorySelect.options.length) categorySelect.add(new Option("口座区分を取得できません", ""));
   categorySelect.value = h?.accountCategoryCode || "unassigned";
-  if(h){ $("#holding-account").value=h.accountId; $("#holding-type").value=h.type; $("#holding-currency").value=h.currency; $("#holding-name").value=h.name; $("#holding-symbol").value=h.symbol; $("#holding-quantity").value=h.quantity; $("#holding-cost").value=h.cost; } updateHoldingFormLabels(); $("#holding-dialog").showModal();
+  if(h){ $("#holding-account").value=h.accountId; $("#holding-type").value=h.type; $("#holding-currency").value=h.currency; $("#holding-name").value=h.name; $("#holding-symbol").value=displaySymbol(h.type, h.symbol); $("#holding-quantity").value=h.quantity; $("#holding-cost").value=h.cost; } $("#name-lookup-status").textContent=""; updateHoldingFormLabels(); $("#holding-dialog").showModal();
 }
 function openAccount(id) { const a=data.accounts.find(x=>x.id===id); $("#account-form").reset(); $("#account-id").value=id||""; $("#account-dialog-title").textContent=a?"証券口座を編集":"証券口座を追加"; $("#account-form-kicker").textContent=a?"EDIT ACCOUNT":"NEW ACCOUNT"; if(a){$("#account-name").value=a.name;$("#account-note").value=a.note} $("#account-dialog").showModal(); }
 async function lookupHoldingName() {
   const button = $("#lookup-name"), status = $("#name-lookup-status");
-  const symbol = $("#holding-symbol").value.trim().toUpperCase(), type = $("#holding-type").value;
+  const type = $("#holding-type").value;
+  const symbol = normalizeStoredSymbol(type, $("#holding-symbol").value.toUpperCase());
   if (!symbol) { status.textContent = "先に銘柄コードを入力してください"; return; }
   button.disabled = true; status.textContent = "取得中…";
   try {
     const res = type === "投資信託"
       ? await fetch(`/api/quote?symbol=${encodeURIComponent(symbol)}&type=${encodeURIComponent(type)}`)
-      : await fetch(`/api/name?symbol=${encodeURIComponent(symbol)}`);
+      : await fetch(`/api/name?symbol=${encodeURIComponent(symbol)}&type=${encodeURIComponent(type)}`);
     const result = await res.json();
     if (!res.ok) throw new Error(result.error || "銘柄情報を取得できませんでした");
     if (!result.name) throw new Error("銘柄名を取得できませんでした。銘柄名を手入力してください。");
@@ -678,7 +679,7 @@ async function lookupHoldingName() {
 async function updateQuote(h) {
   h.quoteAttemptedAt = Date.now();
   try {
-    const symbol = encodeURIComponent(h.symbol.trim().toUpperCase());
+    const symbol = encodeURIComponent(normalizeStoredSymbol(h.type, h.symbol).toUpperCase());
     const type = encodeURIComponent(h.type || "");
     const res = await fetch(`/api/quote?symbol=${symbol}&type=${type}`);
     if (!res.ok) { const error = await res.json().catch(() => ({})); throw new Error(error.error || "取得できませんでした"); }
@@ -707,7 +708,7 @@ async function updateAll() {
     data.usdJpyRate = fxRate;
     data.usdJpyTimestamp = Number.isFinite(fxQuote.priceTimestamp) && fxQuote.priceTimestamp > 0 ? fxQuote.priceTimestamp : null;
   } catch { fxQuoteFailed = true; }
-  for(const h of data.holdings){try{await updateQuote(h)}catch(error){errors.push(`${h.name}（${h.symbol}）`)}}
+  for(const h of data.holdings){try{await updateQuote(h)}catch(error){errors.push(`${h.name}（${displaySymbol(h.type, h.symbol)}）`)}}
   data.lastQuoteFetchedAt=Date.now();
   try {
     await persistState(previousData, { quoteFailureCount: errors.length + Number(fxQuoteFailed) });
@@ -741,11 +742,18 @@ document.addEventListener("click", e => {
 $("#holding-form").addEventListener("submit",async e=>{
   e.preventDefault();
   const previousData=cloneData(data), id=$("#holding-id").value;
-  const h={id:id||generateId(),accountId:$("#holding-account").value,accountCategoryCode:$("#holding-account-category").value,type:$("#holding-type").value,currency:$("#holding-currency").value,name:$("#holding-name").value.trim(),symbol:$("#holding-symbol").value.trim().toUpperCase(),quantity:Number($("#holding-quantity").value),cost:Number($("#holding-cost").value)};
+  const h={id:id||generateId(),accountId:$("#holding-account").value,accountCategoryCode:$("#holding-account-category").value,type:$("#holding-type").value,currency:$("#holding-currency").value,name:$("#holding-name").value.trim(),symbol:normalizeStoredSymbol($("#holding-type").value,$("#holding-symbol").value.toUpperCase()),quantity:Number($("#holding-quantity").value),cost:Number($("#holding-cost").value)};
+  if (!h.symbol) { $("#name-lookup-status").textContent = "銘柄コードを入力してください。"; return; }
   const old=data.holdings.findIndex(x=>x.id===id);
+  const previous = old >= 0 ? data.holdings[old] : null;
+  if (h.type === "日本株" && (!previous || !sameHoldingSlot(previous, h)) &&
+      data.holdings.some(existing => existing.id !== h.id && sameHoldingSlot(existing, h))) {
+    $("#name-lookup-status").textContent = "同じ証券口座・口座区分に、この銘柄は登録済みです。";
+    return;
+  }
+  $("#name-lookup-status").textContent = "";
   if (old >= 0) {
-    const previous = data.holdings[old];
-    const sameQuote = previous.symbol === h.symbol && previous.type === h.type && previous.currency === h.currency;
+    const sameQuote = normalizeStoredSymbol(previous.type, previous.symbol) === h.symbol && previous.type === h.type && previous.currency === h.currency;
     data.holdings[old] = { ...previous, ...h, ...(!sameQuote ? {
       price: null, previousClose: null, priceTimestamp: null, priceDate: null, quoteStatus: "unknown", quoteAttemptedAt: null
     } : {}) };
