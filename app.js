@@ -418,6 +418,13 @@ function renderAssetHeatmapDetail(groups) {
   container.className = "heatmap-detail-content";
   container.innerHTML = `${tiles}${unvalued}`;
 }
+const holdingQuantityNumber = new Intl.NumberFormat("ja-JP", { maximumSignificantDigits: 21 });
+function formatHoldingQuantity(h) {
+  return Number.isFinite(h.quantity) ? holdingQuantityNumber.format(h.quantity) + (h.type === "投資信託" ? " 口" : " 株") : "—";
+}
+function renderHoldingMeta(h) {
+  return escapeHTML(displaySymbol(h.type, h.symbol)) + " · " + escapeHTML(account(h.accountId)?.name || "—") + '<span class="holding-meta-type"> · ' + escapeHTML(h.type) + '</span>';
+}
 function renderHoldingRateBadge(rate) {
   const rateStyle = !Number.isFinite(rate) || Math.abs(rate) < 0.005 ? "neutral" : gainClass(rate);
   const rateText = !Number.isFinite(rate) ? "—" : rateStyle === "neutral" ? "0.00%" : `${rate > 0 ? "+" : ""}${rate.toFixed(2)}%`;
@@ -429,7 +436,7 @@ function holdingRow(h, compact = false) {
   const marketDate = h.type === "投資信託" ? formatFundDate(h.priceDate) : formatDateTime(h.priceTimestamp);
   const marketLabel = h.type === "投資信託" ? "基準日" : "価格日時";
   const quantityLabel = h.type === "投資信託" ? "保有口数" : "保有数量";
-  return `<div class="holding-row"><div class="holding-identity"><div class="holding-name">${escapeHTML(h.name)}</div><div class="holding-meta">${escapeHTML(displaySymbol(h.type, h.symbol))} · ${escapeHTML(account(h.accountId)?.name || "—")}</div>${marketDate ? `<div class="holding-updated">${marketLabel} ${marketDate}</div>` : ""}</div><div class="holding-cell optional holding-current"><small>現在値</small><span class="money">${hasQuote(h) ? number.format(h.price) + " " + h.currency : "未取得"}</span></div><div class="holding-cell holding-value ${compact ? 'hide-mobile' : ''}"><small>評価額</small><span class="money">${value !== null ? yen.format(value) : "—"}</span></div><div class="holding-cell optional holding-gain"><small>評価損益</small><span class="gain ${gainClass(gain || 0)}">${gain !== null ? signed(gain) : "—"}</span></div><div class="holding-cell optional holding-rate"><small>評価損益率</small>${renderHoldingRateBadge(rate)}</div><div class="holding-cell holding-type ${compact ? 'hide-mobile' : ''}"><small>資産区分</small><span>${h.type}</span></div><button class="icon-button holding-menu" data-edit-holding="${h.id}" aria-label="編集">⋮</button><div class="holding-cell holding-quantity"><small>${quantityLabel}</small><span>${number.format(h.quantity)}</span></div></div>`;
+  return `<div class="holding-row"><div class="holding-identity"><div class="holding-name">${escapeHTML(h.name)}</div><div class="holding-meta">${renderHoldingMeta(h)}</div>${marketDate ? `<div class="holding-updated">${marketLabel} ${marketDate}</div>` : ""}</div><div class="holding-cell optional holding-current"><small>現在値</small><span class="money">${hasQuote(h) ? number.format(h.price) + " " + h.currency : "未取得"}</span></div><div class="holding-cell holding-pc-quantity"><small>保有数</small><span class="money">${formatHoldingQuantity(h)}</span></div><div class="holding-cell holding-value ${compact ? 'hide-mobile' : ''}"><small>評価額</small><span class="money">${value !== null ? yen.format(value) : "—"}</span></div><div class="holding-cell optional holding-gain" data-known="${gain !== null}"><small>評価損益</small><span class="gain ${gainClass(gain || 0)}">${gain !== null ? signed(gain) : "—"}</span></div><div class="holding-cell optional holding-rate"><small>評価損益率</small>${renderHoldingRateBadge(rate)}</div><div class="holding-cell holding-type ${compact ? 'hide-mobile' : ''}"><small>資産区分</small><span>${h.type}</span></div><button class="icon-button holding-menu" data-edit-holding="${h.id}" aria-label="編集">⋮</button><div class="holding-cell holding-quantity"><small>${quantityLabel}</small><span>${number.format(h.quantity)}</span></div></div>`;
 }
 function dashboardHoldingRow(h) {
   const value = valueOf(h), cost = costOf(h);
@@ -438,9 +445,9 @@ function dashboardHoldingRow(h) {
   const symbol = displaySymbol(h.type, h.symbol);
   const mobileName = h.type === "投資信託" ? h.name || symbol : symbol || h.name;
   const gainStyle = gainClass(gain || 0);
-  return `<div class="dashboard-holding"><div class="dashboard-holding-identity"><div class="dashboard-holding-name">${escapeHTML(h.name)}</div><div class="dashboard-holding-meta">${escapeHTML(symbol)} · ${escapeHTML(account(h.accountId)?.name || "—")}</div></div><div class="dashboard-holding-mobile-name">${escapeHTML(mobileName)}</div><div class="dashboard-holding-current"><small>現在値</small><span>${hasQuote(h) ? `${number.format(h.price)} ${escapeHTML(h.currency)}` : "未取得"}</span></div><div class="dashboard-holding-value"><small>評価額</small><span>${value !== null ? yen.format(value) : "—"}</span></div><div class="dashboard-holding-gain"><div class="dashboard-holding-gain-amount"><small>評価損益</small><span class="${gainStyle}">${gain !== null ? signed(gain) : "—"}</span></div><div class="dashboard-holding-gain-rate"><small>評価損益率</small>${renderHoldingRateBadge(rate)}</div></div><div class="dashboard-holding-type">${escapeHTML(h.type)}</div></div>`;
+  return `<div class="dashboard-holding"><div class="dashboard-holding-identity"><div class="dashboard-holding-name">${escapeHTML(h.name)}</div><div class="dashboard-holding-meta">${renderHoldingMeta(h)}</div></div><div class="dashboard-holding-mobile-name">${escapeHTML(mobileName)}</div><div class="dashboard-holding-current"><small>現在値</small><span>${hasQuote(h) ? `${number.format(h.price)} ${escapeHTML(h.currency)}` : "未取得"}</span></div><div class="dashboard-holding-quantity"><small>保有数</small><span>${formatHoldingQuantity(h)}</span></div><div class="dashboard-holding-value"><small>評価額</small><span>${value !== null ? yen.format(value) : "—"}</span></div><div class="dashboard-holding-gain"><div class="dashboard-holding-gain-amount" data-known="${gain !== null}"><small>評価損益</small><span class="${gainStyle}">${gain !== null ? signed(gain) : "—"}</span></div><div class="dashboard-holding-gain-rate"><small>評価損益率</small>${renderHoldingRateBadge(rate)}</div></div></div>`;
 }
-function renderDashboardHoldings() { $("#dashboard-holdings").innerHTML = data.holdings.length ? sortHoldingsForList(data.holdings).slice(0,5).map(({ holding }) => dashboardHoldingRow(holding)).join("") : `<div class="empty-state" style="height:100px">まだ保有資産がありません</div>`; }
+function renderDashboardHoldings() { $("#dashboard-holdings").innerHTML = data.holdings.length ? `<div class="dashboard-holding-header"><span>銘柄名</span><span>評価損益</span><span>評価損益率</span></div>` + sortHoldingsForList(data.holdings).slice(0,5).map(({ holding }) => dashboardHoldingRow(holding)).join("") : `<div class="empty-state" style="height:100px">まだ保有資産がありません</div>`; }
 function sortHoldingsForList(holdings) {
   const accountOrder = new Map(data.accounts.map((item, index) => [item.id, index]));
   const categories = data.accountCategories || [];
@@ -499,7 +506,7 @@ function renderHoldingsTable() {
     }
     return headings + holdingRow(holding);
   }).join("");
-  container.innerHTML = `<div class="holding-row table-head"><div>銘柄 / 口座</div><div class="optional">現在値</div><div>評価額</div><div class="optional">評価損益</div><div class="optional holding-rate">評価損益率</div><div>資産区分</div><div></div></div>${rows}`;
+  container.innerHTML = rows;
 }
 function formatDateTime(timestamp) {
   if (!Number.isFinite(timestamp) || timestamp <= 0) return "";

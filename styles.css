@@ -2,25 +2,35 @@
 
 #holding-dialog #holding-account,#holding-dialog #holding-account-category{margin-left:12px}
 .holding-quantity{display:none}
+.holding-pc-quantity,.holding-meta-type{display:none}
 #holdings-view .holdings-account-heading{margin:22px 0 0;padding-bottom:9px;border-bottom:1px solid var(--line);font-size:16px;letter-spacing:-.03em}
 #holdings-view .table-head + .holdings-account-heading{margin-top:12px}
 #holdings-view .holdings-category-heading{margin:16px 0 3px;color:var(--teal);font-size:12px;font-weight:600}
 #holdings-view .holdings-account-heading + .holdings-category-heading{margin-top:11px}
 @media(min-width:901px){
-  #holdings-view .holding-row{grid-template-columns:minmax(0,1.6fr) minmax(92px,.8fr) minmax(102px,.9fr) minmax(102px,.9fr) minmax(102px,.9fr) 64px 24px;gap:10px}
+  #holdings-view .holding-row{grid-template-columns:minmax(0,1.6fr) minmax(92px,.8fr) minmax(100px,.85fr) minmax(102px,.9fr) minmax(102px,.9fr) 84px 24px;gap:10px}
+  #holdings-view .holding-pc-quantity{display:block}
+  #holdings-view .holding-meta-type{display:inline}
+  #holdings-view .holding-type{display:none}
+  #holdings-view .holding-meta{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   #holdings-view .holding-identity{min-width:0}
   #holdings-view .holding-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   #holdings-view .holding-cell{white-space:nowrap}
 }
 @media(min-width:901px) and (max-width:1100px){
   #holdings-view .table-panel{padding:5px 12px}
-  #holdings-view .holding-row{grid-template-columns:minmax(0,1fr) 72px 84px 84px 84px 48px 24px;gap:6px}
+  #holdings-view .holding-row{grid-template-columns:minmax(0,1fr) 72px 84px 84px 84px 70px 24px;gap:6px}
   #holdings-view .holding-name{font-size:12px}
   #holdings-view .money,#holdings-view .gain{font-size:11px}
 }
 
-#dashboard-holdings .dashboard-holding{display:grid;grid-template-columns:minmax(0,2.2fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) minmax(0,.8fr);align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--line);min-width:0}
-#dashboard-holdings .dashboard-holding:first-child{border-top:0}
+#dashboard-holdings .dashboard-holding{display:grid;grid-template-columns:minmax(0,2.2fr) minmax(0,1fr) minmax(0,.85fr) minmax(0,1fr) minmax(0,1fr) minmax(68px,.85fr);align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--line);min-width:0}
+#dashboard-holdings .holding-meta-type{display:inline}
+#dashboard-holdings .dashboard-holding-quantity{min-width:0;white-space:nowrap}
+#dashboard-holdings .dashboard-holding-quantity small{display:block;margin-bottom:3px;color:var(--muted);font-size:10px}
+#dashboard-holdings .dashboard-holding-quantity span{font:500 11px "DM Mono",monospace}
+#dashboard-holdings .dashboard-holding-header{display:none}
+#dashboard-holdings .dashboard-holding:first-child,#dashboard-holdings .dashboard-holding-header + .dashboard-holding{border-top:0}
 #dashboard-holdings .dashboard-holding-identity,#dashboard-holdings .dashboard-holding-current,#dashboard-holdings .dashboard-holding-value,#dashboard-holdings .dashboard-holding-gain-amount,#dashboard-holdings .dashboard-holding-gain-rate,#dashboard-holdings .dashboard-holding-type{min-width:0}
 #dashboard-holdings .dashboard-holding-name,#dashboard-holdings .dashboard-holding-meta{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #dashboard-holdings .dashboard-holding-name{font-size:12px;font-weight:600}
@@ -35,7 +45,8 @@
 #dashboard-holdings .dashboard-holding-type{font-size:11px;white-space:nowrap}
 #dashboard-holdings .dashboard-holding-mobile-name{display:none}
 @media(min-width:601px) and (max-width:700px){
-  #dashboard-holdings .dashboard-holding{grid-template-columns:minmax(0,1.8fr) minmax(0,.85fr) minmax(0,1fr) minmax(0,1.05fr) minmax(68px,.75fr) minmax(0,.65fr);gap:6px}
+  #dashboard-holdings .dashboard-holding{grid-template-columns:minmax(0,1.8fr) minmax(0,.85fr) minmax(0,.8fr) minmax(0,1fr) minmax(0,1.05fr) minmax(68px,.75fr);gap:6px}
+  #dashboard-holdings .dashboard-holding-quantity span{font-size:10px}
   #dashboard-holdings .dashboard-holding-current span,#dashboard-holdings .dashboard-holding-value span,#dashboard-holdings .dashboard-holding-gain span{font-size:10px}
 }
 @media(max-width:700px){#dashboard-holdings .dashboard-holding-gain .dashboard-holding-rate-badge{font-size:11px;padding:2px 4px}}
@@ -89,17 +100,23 @@
   #holdings-view .holdings-account-heading{margin:12px 0 0;padding-bottom:8px;font-size:15px}
   #holdings-view .holdings-category-heading{margin:1px 0 -3px}
   #holdings-view .holdings-account-heading + .holdings-category-heading{margin-top:1px}
-  #holdings-view .holding-row:not(.table-head){display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) 44px;grid-template-areas:"identity identity menu" "type quantity ." "value value value";align-items:start;gap:12px 10px;padding:14px;border:1px solid var(--line);border-radius:9px;background:#fff}
-  #holdings-view .holding-identity{grid-area:identity;min-width:0;padding-right:4px}
-  #holdings-view .holding-name{font-size:14px;line-height:1.45;overflow-wrap:anywhere}
-  #holdings-view .holding-meta{line-height:1.5;overflow-wrap:anywhere}
-  #holdings-view .holding-menu{grid-area:menu;justify-self:end;align-self:start;width:44px;height:44px;margin:-5px -6px 0 0;padding:0}
-  #holdings-view .holding-type{grid-area:type;min-width:0}
-  #holdings-view .holding-type span{display:inline-block;border-radius:4px;background:var(--teal-soft);color:var(--teal);padding:3px 7px;font-size:11px}
-  #holdings-view .holding-quantity{grid-area:quantity;display:block;min-width:0}
-  #holdings-view .holding-quantity span{font:500 13px "DM Mono",monospace}
-  #holdings-view .holding-value{grid-area:value;display:flex;justify-content:space-between;align-items:baseline;gap:12px;border-top:1px solid var(--line);padding-top:10px}
-  #holdings-view .holding-value .money{font:500 17px "DM Mono",monospace;white-space:nowrap}
+  #holdings-view .holding-row:not(.table-head){position:relative;display:grid;grid-template-columns:repeat(6,minmax(0,1fr));grid-template-areas:"identity identity identity identity identity identity" "current current quantity quantity value value" ". . gain gain rate rate";align-items:start;gap:12px 6px;padding:14px;border:1px solid var(--line);border-radius:9px;background:#fff}
+  #holdings-view .holding-identity{grid-area:identity;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:baseline;column-gap:8px;min-width:0}
+  #holdings-view .holding-name{grid-column:1 / -1;min-height:36px;padding-right:44px;font-size:14px;line-height:1.45;overflow-wrap:anywhere}
+  #holdings-view .holding-meta{min-width:0;line-height:1.5;overflow-wrap:anywhere}
+  #holdings-view .holding-updated{justify-self:end;text-align:right;white-space:nowrap}
+  #holdings-view .holding-menu{position:absolute;top:14px;right:14px;width:44px;height:44px;margin:-5px -6px 0 0;padding:0}
+  #holdings-view .holding-meta-type{display:inline}
+  #holdings-view .holding-type,#holdings-view .holding-quantity{display:none}
+  #holdings-view .holding-cell{min-width:0}
+  #holdings-view .holding-current{grid-area:current;display:block}
+  #holdings-view .holding-pc-quantity{grid-area:quantity;display:block}
+  #holdings-view .holding-value{grid-area:value;display:block}
+  #holdings-view .holding-cell .money{font-size:clamp(10px,2.8vw,12px);overflow-wrap:anywhere}
+  #holdings-view .holding-gain{grid-area:gain;display:block}
+  #holdings-view .holding-gain .gain{overflow-wrap:anywhere}
+  #holdings-view .holding-gain[data-known="false"] .gain{color:var(--muted)}
+  #holdings-view .holding-rate{grid-area:rate;display:block;text-align:left}
 
   dialog{width:calc(100vw - 32px);max-width:calc(100vw - 32px);max-height:calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 24px);max-height:calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 24px);margin:auto;overflow-y:auto}
   .dialog-card{width:100%;max-width:100%;min-width:0;padding:18px}
@@ -108,14 +125,21 @@
   .form-row{grid-template-columns:minmax(0,1fr);gap:0}
   .dialog-actions{flex-wrap:wrap;gap:10px}
 
-  #dashboard-holdings .dashboard-holding{grid-template-columns:minmax(0,1fr) 100px 68px;grid-template-areas:"name value rate";gap:8px;padding:7px 0}
+  #dashboard-holdings .dashboard-holding,#dashboard-holdings .dashboard-holding-header{grid-template-columns:minmax(0,1fr) 100px 68px;gap:6px}
+  #dashboard-holdings .dashboard-holding{grid-template-areas:"name gain rate";padding:7px 0}
+  #dashboard-holdings .dashboard-holding-header{display:grid;padding:0 0 5px;color:var(--muted);font-size:10px}
+  #dashboard-holdings .dashboard-holding-header span:nth-child(2){text-align:right;padding-right:10px}
+  #dashboard-holdings .dashboard-holding-header span:nth-child(3){text-align:center}
+  #dashboard-holdings .dashboard-holding-quantity{display:none}
   #dashboard-holdings .dashboard-holding-identity,#dashboard-holdings .dashboard-holding-current,#dashboard-holdings .dashboard-holding-type{display:none}
   #dashboard-holdings .dashboard-holding-mobile-name{grid-area:name;display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;font-weight:600}
-  #dashboard-holdings .dashboard-holding-value{grid-area:value;text-align:right}
+  #dashboard-holdings .dashboard-holding-value{display:none}
   #dashboard-holdings .dashboard-holding-value small,#dashboard-holdings .dashboard-holding-gain small{display:none}
-  #dashboard-holdings .dashboard-holding-value span{font-size:13px}
-  #dashboard-holdings .dashboard-holding-gain{grid-area:rate;display:block;text-align:right}
-  #dashboard-holdings .dashboard-holding-gain-amount{display:none}
+  #dashboard-holdings .dashboard-holding-gain{display:contents}
+  #dashboard-holdings .dashboard-holding-gain-amount{grid-area:gain;display:block;text-align:right;padding-right:10px}
+  #dashboard-holdings .dashboard-holding-gain-amount span{font-size:12px}
+  #dashboard-holdings .dashboard-holding-gain-amount[data-known="false"] span{color:var(--muted)}
+  #dashboard-holdings .dashboard-holding-gain-rate{grid-area:rate;text-align:right}
   .sync-notice:not([hidden]){align-items:flex-start;flex-direction:column;padding:10px 12px}
   .sync-actions{flex-wrap:wrap}
 }
