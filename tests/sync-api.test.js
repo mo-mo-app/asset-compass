@@ -66,6 +66,11 @@ test("SQLite state API migrates once, saves by revision, rejects stale writes, a
   assert.equal(initial.revision, 0);
   assert.equal(initial.data.usdJpyRate, null);
   assert.equal(initial.data.lastQuoteFetchedAt, null);
+  assert.deepEqual(initial.data.accountCategories.map(category => [category.code, category.sortOrder]), [
+    ["nisa_tsumitate", 10], ["nisa_growth", 20], ["specified", 30],
+    ["ideco", 40], ["other", 50], ["unassigned", 90]
+  ]);
+  assert.equal(initial.data.accountCategories.find(category => category.code === "nisa_growth").label, "NISA成長投資枠");
   assert.equal(initialResponse.headers.get("access-control-allow-origin"), null);
 
   const localData = {
@@ -90,6 +95,7 @@ test("SQLite state API migrates once, saves by revision, rejects stale writes, a
   assert.equal(migrated.data.holdings[1].priceDate, "9/25");
   assert.equal(migrated.data.holdings[0].previousClose, null, "legacy fallback values are unverified");
   assert.equal(migrated.data.holdings[0].quoteStatus, "unknown");
+  assert.ok(migrated.data.holdings.every(holding => holding.accountCategoryCode === "unassigned"));
 
   const newData = structuredClone(migrated.data);
   newData.accounts[0].name = "SBI証券（更新）";
@@ -228,10 +234,14 @@ test("SQLite state API migrates once, saves by revision, rejects stale writes, a
 
   assert.equal(fs.existsSync(dbPath), true);
   const db = new DatabaseSync(dbPath);
-  assert.equal(db.prepare("PRAGMA user_version").get().user_version, 3);
+  assert.equal(db.prepare("PRAGMA user_version").get().user_version, 4);
   const tableCount = db.prepare("SELECT count(*) AS count FROM sqlite_master WHERE type = 'table' AND name IN ('app_state','accounts','holdings','holding_quotes','fx_rates')").get().count;
   assert.equal(tableCount, 5);
   assert.equal(db.prepare("PRAGMA foreign_key_list(holdings)").all().some(row => row.table === "accounts" && row.from === "account_id"), true);
+  assert.equal(db.prepare("PRAGMA foreign_key_list(holdings)").all().some(row => row.table === "account_categories" && row.from === "account_category_code"), true);
+  const categoryColumn = db.prepare("PRAGMA table_info(holdings)").all().find(row => row.name === "account_category_code");
+  assert.equal(categoryColumn.notnull, 1);
+  assert.equal(categoryColumn.dflt_value, "'unassigned'");
   assert.equal(db.prepare("PRAGMA foreign_key_list(holding_quotes)").all().some(row => row.table === "holdings" && row.from === "holding_id"), true);
   assert.equal(db.prepare("SELECT count(*) AS count FROM daily_asset_snapshots").get().count, 4);
   assert.equal(db.prepare("PRAGMA foreign_key_list(daily_account_snapshots)").all().some(row => row.table === "daily_asset_snapshots" && row.from === "snapshot_date"), true);
@@ -246,6 +256,7 @@ test("SQLite state API migrates once, saves by revision, rejects stale writes, a
   assert.equal(afterRestart.data.holdings[0].quoteStatus, "success");
   assert.equal(afterRestart.data.holdings[0].quoteAttemptedAt, 1780000003000);
   assert.equal(afterRestart.data.holdings[1].previousClose, null);
+  assert.equal(afterRestart.data.holdings[0].accountCategoryCode, "unassigned");
   const persistedSnapshots = new DatabaseSync(dbPath);
   assert.equal(persistedSnapshots.prepare("SELECT count(*) AS count FROM daily_asset_snapshots").get().count, 4);
   persistedSnapshots.close();
@@ -253,6 +264,60 @@ test("SQLite state API migrates once, saves by revision, rejects stale writes, a
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ data: localData })
   });
   assert.equal(repeatMigration.status, 409);
+
+  const categorizedData = structuredClone(afterRestart.data);
+  categorizedData.holdings[0].accountCategoryCode = "nisa_growth";
+  categorizedData.holdings.push({
+    id: "holding-new", accountId: "account-1", type: "米国株", currency: "USD",
+    name: "NVIDIA", symbol: "NVDA", quantity: 1, cost: 100, price: null
+  });
+  categorizedData.holdings.push({
+    id: "holding-same-symbol", accountId: "account-1", accountCategoryCode: "nisa_tsumitate",
+    type: "米国株", currency: "USD", name: "Apple", symbol: "AAPL", quantity: 1, cost: 180, price: null
+  });
+  const categorizedResponse = await fetch(`${base}/api/v1/state`, {
+    method: "PUT", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ expectedRevision: 4, data: categorizedData })
+  });
+  assert.equal(categorizedResponse.status, 200);
+  const categorized = await categorizedResponse.json();
+  assert.equal(categorized.revision, 5);
+  assert.equal(categorized.data.holdings[0].accountCategoryCode, "nisa_growth");
+  assert.equal(categorized.data.holdings.find(holding => holding.id === "holding-new").accountCategoryCode, "unassigned");
+  assert.equal(categorized.data.holdings.find(holding => holding.id === "holding-same-symbol").accountCategoryCode, "nisa_tsumitate");
+
+  const invalidData = structuredClone(categorized.data);
+  invalidData.holdings[0].accountCategoryCode = "unknown-category";
+  const invalidResponse = await fetch(`${base}/api/v1/state`, {
+    method: "PUT", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ expectedRevision: 5, data: invalidData })
+  });
+  assert.equal(invalidResponse.status, 400);
+  assert.equal((await (await fetch(`${base}/api/v1/state`)).json()).revision, 5);
+
+  const oldClientData = structuredClone(categorized.data);
+  oldClientData.holdings.forEach(holding => delete holding.accountCategoryCode);
+  oldClientData.holdings[0].quantity = 4;
+  const oldClientResponse = await fetch(`${base}/api/v1/state`, {
+    method: "PUT", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ expectedRevision: 5, data: oldClientData })
+  });
+  assert.equal(oldClientResponse.status, 200);
+  const oldClientSaved = await oldClientResponse.json();
+  assert.equal(oldClientSaved.data.holdings[0].accountCategoryCode, "nisa_growth");
+  assert.equal(oldClientSaved.data.holdings[0].quantity, 4);
+  assert.equal(oldClientSaved.data.holdings.find(holding => holding.id === "holding-new").accountCategoryCode, "unassigned");
+  assert.equal(oldClientSaved.data.holdings.find(holding => holding.id === "holding-same-symbol").accountCategoryCode, "nisa_tsumitate");
+  const staleCategoryResponse = await fetch(`${base}/api/v1/state`, {
+    method: "PUT", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ expectedRevision: 5, data: categorizedData })
+  });
+  assert.equal(staleCategoryResponse.status, 409);
+  await stopServer();
+  await startServer();
+  const categoryAfterRestart = await (await fetch(`${base}/api/v1/state`)).json();
+  assert.equal(categoryAfterRestart.revision, 6);
+  assert.equal(categoryAfterRestart.data.holdings[0].accountCategoryCode, "nisa_growth");
 
   await stopServer();
   const legacyDbPath = path.join(tempDir, "legacy-v1.sqlite");
@@ -277,50 +342,64 @@ test("SQLite state API migrates once, saves by revision, rejects stale writes, a
   });
   assert.equal(migrationRun.status, 0, migrationRun.stderr.toString());
   const upgradedDb = new DatabaseSync(legacyDbPath);
-  assert.equal(upgradedDb.prepare("PRAGMA user_version").get().user_version, 3);
+  assert.equal(upgradedDb.prepare("PRAGMA user_version").get().user_version, 4);
   assert.equal(upgradedDb.prepare("SELECT name FROM accounts WHERE id = 'legacy-account'").get().name, "既存口座");
   assert.equal(upgradedDb.prepare("SELECT revision FROM app_state WHERE singleton_id = 1").get().revision, 8);
   assert.equal(upgradedDb.prepare("SELECT price FROM holding_quotes").get().price, 100);
   assert.equal(upgradedDb.prepare("SELECT previous_close FROM holding_quotes").get().previous_close, null);
   assert.equal(upgradedDb.prepare("SELECT quote_status FROM holdings").get().quote_status, "unknown");
+  assert.equal(upgradedDb.prepare("SELECT account_category_code FROM holdings").get().account_category_code, "unassigned");
   assert.equal(upgradedDb.prepare("SELECT count(*) AS count FROM daily_asset_snapshots").get().count, 0);
   upgradedDb.close();
 });
 
-test("v2 upgrade preserves valuations and snapshots, invalidates legacy comparisons and stale revisions only once", () => {
-  const upgradePath = path.join(tempDir, "legacy-v2.sqlite");
-  const runDatabase = source => spawnSync(process.execPath, ["-e", source], {
-    cwd: projectRoot, env: { ...process.env, ASSET_COMPASS_DB_PATH: upgradePath }
-  });
-  const seed = runDatabase(`
-    const { db, migrateLocalState, saveState } = require('./database');
-    const state = migrateLocalState({
-      accounts: [{ id: 'a', name: '口座' }],
-      holdings: [{ id: 'h', accountId: 'a', name: '銘柄', symbol: '7203.T', type: '日本株', currency: 'JPY', quantity: 2, cost: 90, price: 100 }]
-    }).state;
-    saveState(state.revision, state.data, { quoteFailureCount: 0 });
-    db.close();
-  `);
-  assert.equal(seed.status, 0, seed.stderr.toString());
+test("v3 upgrade preserves accounts, quotes, FX, snapshots and revision", () => {
+  const upgradePath = path.join(tempDir, "legacy-v3.sqlite");
   const legacy = new DatabaseSync(upgradePath);
   legacy.exec(`
-    ALTER TABLE holdings DROP COLUMN quote_status;
-    ALTER TABLE holdings DROP COLUMN quote_attempted_at;
-    UPDATE holding_quotes SET previous_close = price;
-    PRAGMA user_version = 2;
+    PRAGMA foreign_keys = ON;
+    CREATE TABLE app_state (singleton_id INTEGER PRIMARY KEY, revision INTEGER NOT NULL, initialized INTEGER NOT NULL, last_quote_fetched_at INTEGER, updated_at INTEGER NOT NULL);
+    CREATE TABLE accounts (id TEXT PRIMARY KEY, name TEXT NOT NULL, note TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+    CREATE TABLE holdings (id TEXT PRIMARY KEY, account_id TEXT NOT NULL, type TEXT NOT NULL, currency TEXT NOT NULL, name TEXT NOT NULL, symbol TEXT NOT NULL, quantity REAL NOT NULL, cost REAL NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, quote_status TEXT NOT NULL DEFAULT 'unknown', quote_attempted_at INTEGER, FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE RESTRICT);
+    CREATE TABLE holding_quotes (holding_id TEXT PRIMARY KEY, price REAL NOT NULL, previous_close REAL, price_timestamp INTEGER, price_date TEXT, FOREIGN KEY (holding_id) REFERENCES holdings(id) ON DELETE CASCADE);
+    CREATE TABLE fx_rates (base_currency TEXT NOT NULL, quote_currency TEXT NOT NULL, rate REAL NOT NULL, price_timestamp INTEGER, PRIMARY KEY (base_currency, quote_currency));
+    CREATE TABLE daily_asset_snapshots (snapshot_date TEXT PRIMARY KEY, total_value_jpy REAL, usd_jpy_rate REAL, saved_at INTEGER NOT NULL, holding_count INTEGER NOT NULL, valued_holding_count INTEGER NOT NULL, unpriced_holding_count INTEGER NOT NULL, quote_failure_count INTEGER NOT NULL, is_complete INTEGER NOT NULL);
+    CREATE TABLE daily_account_snapshots (snapshot_date TEXT NOT NULL, account_id TEXT NOT NULL, account_name TEXT NOT NULL, value_jpy REAL, holding_count INTEGER NOT NULL, valued_holding_count INTEGER NOT NULL, unpriced_holding_count INTEGER NOT NULL, PRIMARY KEY (snapshot_date, account_id), FOREIGN KEY (snapshot_date) REFERENCES daily_asset_snapshots(snapshot_date) ON DELETE CASCADE);
+    INSERT INTO app_state VALUES (1, 7, 1, 1780000000000, 1780000001000);
+    INSERT INTO accounts VALUES ('a', '楽天証券', '既存メモ', 1, 2);
+    INSERT INTO holdings VALUES ('h', 'a', '日本株', 'JPY', 'トヨタ', '7203.T', 2, 90, 3, 4, 'success', 1780000002000);
+    INSERT INTO holding_quotes VALUES ('h', 100, 95, 1780000003000, NULL);
+    INSERT INTO fx_rates VALUES ('USD', 'JPY', 156.2, 1780000004000);
+    INSERT INTO daily_asset_snapshots VALUES ('2026-09-25', 200, 156.2, 1780000005000, 1, 1, 0, 0, 1);
+    INSERT INTO daily_account_snapshots VALUES ('2026-09-25', 'a', '楽天証券', 200, 1, 1, 0);
+    PRAGMA user_version = 3;
   `);
-  const revisionBefore = legacy.prepare("SELECT revision FROM app_state").get().revision;
-  const snapshotBefore = legacy.prepare("SELECT * FROM daily_asset_snapshots").get();
+  const accountBefore = legacy.prepare("SELECT * FROM accounts").get();
+  const quoteBefore = legacy.prepare("SELECT * FROM holding_quotes").get();
+  const fxBefore = legacy.prepare("SELECT * FROM fx_rates").get();
+  const assetSnapshotBefore = legacy.prepare("SELECT * FROM daily_asset_snapshots").get();
+  const accountSnapshotBefore = legacy.prepare("SELECT * FROM daily_account_snapshots").get();
   legacy.close();
+
   for (let run = 0; run < 2; run++) {
-    const result = runDatabase("require('./database').db.close()");
+    const result = spawnSync(process.execPath, ["-e", "require('./database').db.close()"], {
+      cwd: projectRoot, env: { ...process.env, ASSET_COMPASS_DB_PATH: upgradePath }
+    });
     assert.equal(result.status, 0, result.stderr.toString());
     const upgraded = new DatabaseSync(upgradePath);
-    assert.equal(upgraded.prepare("PRAGMA user_version").get().user_version, 3);
-    assert.equal(upgraded.prepare("SELECT revision FROM app_state").get().revision, revisionBefore + 1);
-    assert.equal(upgraded.prepare("SELECT price FROM holding_quotes").get().price, 100);
-    assert.equal(upgraded.prepare("SELECT previous_close FROM holding_quotes").get().previous_close, null);
-    assert.deepEqual(upgraded.prepare("SELECT * FROM daily_asset_snapshots").get(), snapshotBefore);
+    upgraded.exec("PRAGMA foreign_keys = ON");
+    assert.equal(upgraded.prepare("PRAGMA user_version").get().user_version, 4);
+    assert.equal(upgraded.prepare("SELECT revision FROM app_state").get().revision, 7);
+    assert.deepEqual(upgraded.prepare("SELECT * FROM accounts").get(), accountBefore);
+    assert.deepEqual(upgraded.prepare("SELECT * FROM holding_quotes").get(), quoteBefore);
+    assert.deepEqual(upgraded.prepare("SELECT * FROM fx_rates").get(), fxBefore);
+    assert.deepEqual(upgraded.prepare("SELECT * FROM daily_asset_snapshots").get(), assetSnapshotBefore);
+    assert.deepEqual(upgraded.prepare("SELECT * FROM daily_account_snapshots").get(), accountSnapshotBefore);
+    const migratedHolding = upgraded.prepare("SELECT id, account_category_code, quote_status FROM holdings").get();
+    assert.equal(migratedHolding.id, "h");
+    assert.equal(migratedHolding.account_category_code, "unassigned");
+    assert.equal(migratedHolding.quote_status, "success");
+    assert.deepEqual(upgraded.prepare("PRAGMA foreign_key_check").all(), []);
     upgraded.close();
   }
 });

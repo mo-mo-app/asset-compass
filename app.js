@@ -77,6 +77,7 @@ async function loadServerState() {
       serverRevision = payload.revision;
       serverInitialized = false;
       serverConnected = true;
+      data.accountCategories = payload.data.accountCategories;
       render();
       showSyncNotice("共通データは未初期化です。PC側のデータを正本にする場合はPCで初回移行してください。iPhone側のデータは自動統合しません。", { migration: true });
     }
@@ -449,10 +450,65 @@ function holdingRow(h, compact = false) {
   return `<div class="holding-row"><div class="holding-identity"><div class="holding-name">${escapeHTML(h.name)}</div><div class="holding-meta">${escapeHTML(h.symbol)} · ${escapeHTML(account(h.accountId)?.name || "—")}</div>${marketDate ? `<div class="holding-updated">${marketLabel} ${marketDate}</div>` : ""}</div><div class="holding-cell optional holding-current"><small>現在値</small><span class="money">${hasQuote(h) ? number.format(h.price) + " " + h.currency : "未取得"}</span></div><div class="holding-cell holding-value ${compact ? 'hide-mobile' : ''}"><small>評価額</small><span class="money">${value !== null ? yen.format(value) : "—"}</span></div><div class="holding-cell optional holding-gain"><small>評価損益</small><span class="gain ${gainClass(gain || 0)}">${gain !== null ? `${signed(gain)}<br>${rate.toFixed(2)}%` : "—"}</span></div><div class="holding-cell holding-type ${compact ? 'hide-mobile' : ''}"><small>資産区分</small><span>${h.type}</span></div><button class="icon-button holding-menu" data-edit-holding="${h.id}" aria-label="編集">⋮</button><div class="holding-cell holding-quantity"><small>${quantityLabel}</small><span>${number.format(h.quantity)}</span></div></div>`;
 }
 function renderDashboardHoldings() { $("#dashboard-holdings").innerHTML = data.holdings.length ? data.holdings.slice(0,5).map(h => holdingRow(h,true)).join("") : `<div class="empty-state" style="height:100px">まだ保有資産がありません</div>`; }
+function sortHoldingsForList(holdings) {
+  const accountOrder = new Map(data.accounts.map((item, index) => [item.id, index]));
+  const categories = data.accountCategories || [];
+  const categoryOrder = new Map(categories.map((item, index) => [item.code, { sortOrder: item.sortOrder, index }]));
+  const typeOrder = new Map(["米国株", "日本株", "投資信託"].map((type, index) => [type, index]));
+  return holdings.map((holding, index) => {
+    const symbol = String(holding.symbol || "").trim().toUpperCase();
+    return { holding, index, symbol,
+      categoryCode: holding.accountCategoryCode || "unassigned" };
+  }).sort((a, b) => {
+    const accountDifference = (accountOrder.get(a.holding.accountId) ?? data.accounts.length) -
+      (accountOrder.get(b.holding.accountId) ?? data.accounts.length);
+    if (accountDifference) return accountDifference;
+    const accountIdDifference = a.holding.accountId.localeCompare(b.holding.accountId);
+    if (accountIdDifference) return accountIdDifference;
+    const aCategory = categoryOrder.get(a.categoryCode), bCategory = categoryOrder.get(b.categoryCode);
+    const categoryDifference = (aCategory?.sortOrder ?? Number.MAX_SAFE_INTEGER) -
+      (bCategory?.sortOrder ?? Number.MAX_SAFE_INTEGER);
+    if (categoryDifference) return categoryDifference;
+    const categoryIndexDifference = (aCategory?.index ?? categories.length) - (bCategory?.index ?? categories.length);
+    if (categoryIndexDifference) return categoryIndexDifference;
+    const categoryCodeDifference = a.categoryCode.localeCompare(b.categoryCode);
+    if (categoryCodeDifference) return categoryCodeDifference;
+    const typeDifference = (typeOrder.get(a.holding.type) ?? typeOrder.size) -
+      (typeOrder.get(b.holding.type) ?? typeOrder.size);
+    if (typeDifference) return typeDifference;
+    const unknownTypeDifference = a.holding.type.localeCompare(b.holding.type);
+    if (unknownTypeDifference) return unknownTypeDifference;
+    if (!a.symbol) return b.symbol ? 1 : a.index - b.index;
+    if (!b.symbol) return -1;
+    return a.symbol.localeCompare(b.symbol, "en") || a.index - b.index;
+  });
+}
 function renderHoldingsTable() {
-  const a = $("#filter-account").value, t = $("#filter-type").value;
-  const list = data.holdings.filter(h => (a === "all" || h.accountId === a) && (t === "all" || h.type === t));
-  $("#holdings-table").innerHTML = list.length ? `<div class="holding-row table-head"><div>銘柄 / 口座</div><div class="optional">現在値</div><div>評価額</div><div class="optional">評価損益</div><div>資産区分</div><div></div></div>${list.map(h => holdingRow(h)).join("")}` : `<div class="empty-state" style="height:160px">「保有資産を追加」から最初の銘柄を登録してください</div>`;
+  const accountFilter = $("#filter-account").value, typeFilter = $("#filter-type").value;
+  const filtered = data.holdings.filter(holding =>
+    (accountFilter === "all" || holding.accountId === accountFilter) &&
+    (typeFilter === "all" || holding.type === typeFilter));
+  const container = $("#holdings-table");
+  if (!filtered.length) {
+    container.innerHTML = `<div class="empty-state" style="height:160px">「保有資産を追加」から最初の銘柄を登録してください</div>`;
+    return;
+  }
+  const categoryLabels = new Map((data.accountCategories || []).map(category => [category.code, category.label]));
+  let lastAccountId = null, lastCategoryCode = null;
+  const rows = sortHoldingsForList(filtered).map(({ holding, categoryCode }) => {
+    let headings = "";
+    if (holding.accountId !== lastAccountId) {
+      headings += `<h2 class="holdings-account-heading">${escapeHTML(account(holding.accountId)?.name || "—")}</h2>`;
+      lastAccountId = holding.accountId;
+      lastCategoryCode = null;
+    }
+    if (categoryCode !== lastCategoryCode) {
+      headings += `<h3 class="holdings-category-heading">${escapeHTML(categoryLabels.get(categoryCode) || (categoryCode === "unassigned" ? "未設定" : categoryCode))}</h3>`;
+      lastCategoryCode = categoryCode;
+    }
+    return headings + holdingRow(holding);
+  }).join("");
+  container.innerHTML = `<div class="holding-row table-head"><div>銘柄 / 口座</div><div class="optional">現在値</div><div>評価額</div><div class="optional">評価損益</div><div>資産区分</div><div></div></div>${rows}`;
 }
 function formatDateTime(timestamp) {
   if (!Number.isFinite(timestamp) || timestamp <= 0) return "";
@@ -595,7 +651,12 @@ function updateHoldingFormLabels() {
   $("#fund-unit-note").hidden = !isFund;
 }
 function openHolding(id) {
-  const h=data.holdings.find(x=>x.id===id); $("#holding-form").reset(); $("#holding-id").value=id||""; $("#holding-dialog-title").textContent=h?"保有資産を編集":"保有資産を追加"; $("#holding-form-kicker").textContent=h?"EDIT HOLDING":"NEW HOLDING"; $("#holding-account").innerHTML=data.accounts.map(a=>`<option value="${a.id}">${escapeHTML(a.name)}</option>`).join(""); if(h){ $("#holding-account").value=h.accountId; $("#holding-type").value=h.type; $("#holding-currency").value=h.currency; $("#holding-name").value=h.name; $("#holding-symbol").value=h.symbol; $("#holding-quantity").value=h.quantity; $("#holding-cost").value=h.cost; } updateHoldingFormLabels(); $("#holding-dialog").showModal();
+  const h=data.holdings.find(x=>x.id===id); $("#holding-form").reset(); $("#holding-id").value=id||""; $("#holding-dialog-title").textContent=h?"保有資産を編集":"保有資産を追加"; $("#holding-form-kicker").textContent=h?"EDIT HOLDING":"NEW HOLDING"; $("#holding-account").innerHTML=data.accounts.map(a=>`<option value="${a.id}">${escapeHTML(a.name)}</option>`).join("");
+  const categorySelect = $("#holding-account-category");
+  categorySelect.replaceChildren(...(data.accountCategories || []).map(category => new Option(category.label, category.code)));
+  if (!categorySelect.options.length) categorySelect.add(new Option("口座区分を取得できません", ""));
+  categorySelect.value = h?.accountCategoryCode || "unassigned";
+  if(h){ $("#holding-account").value=h.accountId; $("#holding-type").value=h.type; $("#holding-currency").value=h.currency; $("#holding-name").value=h.name; $("#holding-symbol").value=h.symbol; $("#holding-quantity").value=h.quantity; $("#holding-cost").value=h.cost; } updateHoldingFormLabels(); $("#holding-dialog").showModal();
 }
 function openAccount(id) { const a=data.accounts.find(x=>x.id===id); $("#account-form").reset(); $("#account-id").value=id||""; $("#account-dialog-title").textContent=a?"証券口座を編集":"証券口座を追加"; $("#account-form-kicker").textContent=a?"EDIT ACCOUNT":"NEW ACCOUNT"; if(a){$("#account-name").value=a.name;$("#account-note").value=a.note} $("#account-dialog").showModal(); }
 async function lookupHoldingName() {
@@ -680,7 +741,7 @@ document.addEventListener("click", e => {
 $("#holding-form").addEventListener("submit",async e=>{
   e.preventDefault();
   const previousData=cloneData(data), id=$("#holding-id").value;
-  const h={id:id||generateId(),accountId:$("#holding-account").value,type:$("#holding-type").value,currency:$("#holding-currency").value,name:$("#holding-name").value.trim(),symbol:$("#holding-symbol").value.trim().toUpperCase(),quantity:Number($("#holding-quantity").value),cost:Number($("#holding-cost").value)};
+  const h={id:id||generateId(),accountId:$("#holding-account").value,accountCategoryCode:$("#holding-account-category").value,type:$("#holding-type").value,currency:$("#holding-currency").value,name:$("#holding-name").value.trim(),symbol:$("#holding-symbol").value.trim().toUpperCase(),quantity:Number($("#holding-quantity").value),cost:Number($("#holding-cost").value)};
   const old=data.holdings.findIndex(x=>x.id===id);
   if (old >= 0) {
     const previous = data.holdings[old];

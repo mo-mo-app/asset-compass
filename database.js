@@ -10,7 +10,7 @@ db.exec("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA busy_timeou
 
 function runMigrations() {
   const currentVersion = db.prepare("PRAGMA user_version").get().user_version;
-  if (currentVersion > 3) throw new Error(`Database schema version ${currentVersion} is newer than this application supports.`);
+  if (currentVersion > 4) throw new Error(`Database schema version ${currentVersion} is newer than this application supports.`);
 
   if (currentVersion === 0) {
     db.exec("BEGIN IMMEDIATE");
@@ -133,6 +133,71 @@ function runMigrations() {
       throw error;
     }
   }
+  if (db.prepare("PRAGMA user_version").get().user_version < 4) {
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      db.exec(`
+        CREATE TABLE account_categories (
+          code TEXT NOT NULL PRIMARY KEY,
+          label TEXT NOT NULL,
+          sort_order INTEGER NOT NULL,
+          is_active INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0, 1))
+        );
+        INSERT INTO account_categories (code, label, sort_order, is_active) VALUES
+          ('nisa_tsumitate', 'NISAつみたて投資枠', 10, 1),
+          ('nisa_growth', 'NISA成長投資枠', 20, 1),
+          ('specified', '特定口座', 30, 1),
+          ('ideco', 'iDeCo', 40, 1),
+          ('other', 'その他', 50, 1),
+          ('unassigned', '未設定', 90, 1);
+
+        CREATE TABLE holdings_v4 (
+          id TEXT NOT NULL PRIMARY KEY,
+          account_id TEXT NOT NULL,
+          account_category_code TEXT NOT NULL DEFAULT 'unassigned',
+          type TEXT NOT NULL CHECK (type IN ('日本株', '米国株', '投資信託')),
+          currency TEXT NOT NULL CHECK (currency IN ('JPY', 'USD')),
+          name TEXT NOT NULL,
+          symbol TEXT NOT NULL,
+          quantity REAL NOT NULL CHECK (quantity > 0),
+          cost REAL NOT NULL CHECK (cost >= 0),
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL,
+          quote_status TEXT NOT NULL DEFAULT 'unknown' CHECK (quote_status IN ('unknown', 'success', 'failed')),
+          quote_attempted_at INTEGER CHECK (quote_attempted_at IS NULL OR quote_attempted_at > 0),
+          FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE RESTRICT,
+          FOREIGN KEY (account_category_code) REFERENCES account_categories(code)
+        );
+        INSERT INTO holdings_v4 (
+          id, account_id, account_category_code, type, currency, name, symbol,
+          quantity, cost, created_at, updated_at, quote_status, quote_attempted_at
+        ) SELECT id, account_id, 'unassigned', type, currency, name, symbol,
+          quantity, cost, created_at, updated_at, quote_status, quote_attempted_at
+          FROM holdings ORDER BY rowid;
+
+        CREATE TABLE holding_quotes_v4 (
+          holding_id TEXT NOT NULL PRIMARY KEY,
+          price REAL NOT NULL CHECK (price >= 0),
+          previous_close REAL,
+          price_timestamp INTEGER,
+          price_date TEXT,
+          FOREIGN KEY (holding_id) REFERENCES holdings_v4(id) ON DELETE CASCADE
+        );
+        INSERT INTO holding_quotes_v4 (holding_id, price, previous_close, price_timestamp, price_date)
+          SELECT holding_id, price, previous_close, price_timestamp, price_date FROM holding_quotes;
+        DROP TABLE holding_quotes;
+        DROP TABLE holdings;
+        ALTER TABLE holdings_v4 RENAME TO holdings;
+        ALTER TABLE holding_quotes_v4 RENAME TO holding_quotes;
+        PRAGMA user_version = 4;
+      `);
+      if (db.prepare("PRAGMA foreign_key_check").all().length) throw new Error("Foreign key check failed during v4 migration.");
+      db.exec("COMMIT");
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
+  }
 }
 
 runMigrations();
@@ -156,10 +221,11 @@ function requiredText(value, fieldName) {
   return value.trim();
 }
 
-function normalizeState(input) {
+function normalizeState(input, existingCategories = new Map()) {
   if (!input || typeof input !== "object" || !Array.isArray(input.accounts) || !Array.isArray(input.holdings)) {
     throw new Error("State must contain accounts and holdings arrays.");
   }
+  const categoryCodes = new Set(db.prepare("SELECT code FROM account_categories").all().map(row => row.code));
 
   const accounts = input.accounts.map((account, index) => ({
     id: requiredText(account?.id, `accounts[${index}].id`),
@@ -171,6 +237,11 @@ function normalizeState(input) {
 
   const holdings = input.holdings.map((holding, index) => {
     const field = `holdings[${index}]`;
+    const id = requiredText(holding?.id, `${field}.id`);
+    const accountCategoryCode = holding && Object.hasOwn(holding, "accountCategoryCode")
+      ? requiredText(holding.accountCategoryCode, `${field}.accountCategoryCode`)
+      : existingCategories.get(id) ?? "unassigned";
+    if (!categoryCodes.has(accountCategoryCode)) throw new Error(`${field}.accountCategoryCode is invalid.`);
     const type = requiredText(holding?.type, `${field}.type`);
     const currency = requiredText(holding?.currency, `${field}.currency`);
     if (!["日本株", "米国株", "投資信託"].includes(type)) throw new Error(`${field}.type is invalid.`);
@@ -191,7 +262,7 @@ function normalizeState(input) {
         ? holding.priceDate
         : (() => { throw new Error(`${field}.priceDate must use M/D format or be null.`); })();
     return {
-      id: requiredText(holding?.id, `${field}.id`), accountId, type, currency,
+      id, accountId, accountCategoryCode, type, currency,
       name: requiredText(holding?.name, `${field}.name`),
       symbol: requiredText(holding?.symbol, `${field}.symbol`),
       quantity: holding.quantity, cost: holding.cost, price, previousClose, quoteStatus, quoteAttemptedAt,
@@ -217,10 +288,11 @@ function upsertState(data) {
     ON CONFLICT(id) DO UPDATE SET name = excluded.name, note = excluded.note, updated_at = excluded.updated_at
   `);
   const upsertHolding = db.prepare(`
-    INSERT INTO holdings (id, account_id, type, currency, name, symbol, quantity, cost, created_at, updated_at, quote_status, quote_attempted_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO holdings (id, account_id, account_category_code, type, currency, name, symbol, quantity, cost, created_at, updated_at, quote_status, quote_attempted_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET account_id = excluded.account_id, type = excluded.type,
-      currency = excluded.currency, name = excluded.name, symbol = excluded.symbol,
+      account_category_code = excluded.account_category_code, currency = excluded.currency,
+      name = excluded.name, symbol = excluded.symbol,
       quantity = excluded.quantity, cost = excluded.cost, updated_at = excluded.updated_at,
       quote_status = excluded.quote_status, quote_attempted_at = excluded.quote_attempted_at
   `);
@@ -233,7 +305,7 @@ function upsertState(data) {
 
   for (const account of data.accounts) upsertAccount.run(account.id, account.name, account.note, now, now);
   for (const holding of data.holdings) {
-    upsertHolding.run(holding.id, holding.accountId, holding.type, holding.currency, holding.name, holding.symbol, holding.quantity, holding.cost, now, now, holding.quoteStatus, holding.quoteAttemptedAt);
+    upsertHolding.run(holding.id, holding.accountId, holding.accountCategoryCode, holding.type, holding.currency, holding.name, holding.symbol, holding.quantity, holding.cost, now, now, holding.quoteStatus, holding.quoteAttemptedAt);
     if (holding.price !== null) upsertQuote.run(holding.id, holding.price, holding.previousClose, holding.priceTimestamp, holding.priceDate);
     else db.prepare("DELETE FROM holding_quotes WHERE holding_id = ?").run(holding.id);
   }
@@ -250,12 +322,16 @@ function upsertState(data) {
 function getState() {
   const state = db.prepare("SELECT revision, initialized, last_quote_fetched_at, updated_at FROM app_state WHERE singleton_id = 1").get();
   const accounts = db.prepare("SELECT id, name, note FROM accounts ORDER BY rowid").all();
+  const accountCategories = db.prepare(`
+    SELECT code, label, sort_order AS sortOrder FROM account_categories
+    WHERE is_active = 1 ORDER BY sort_order, code
+  `).all();
   const holdings = db.prepare(`
-    SELECT h.id, h.account_id, h.type, h.currency, h.name, h.symbol, h.quantity, h.cost,
+    SELECT h.id, h.account_id, h.account_category_code, h.type, h.currency, h.name, h.symbol, h.quantity, h.cost,
       q.price, q.previous_close, q.price_timestamp, q.price_date, h.quote_status, h.quote_attempted_at
     FROM holdings h LEFT JOIN holding_quotes q ON q.holding_id = h.id ORDER BY h.rowid
   `).all().map(row => ({
-    id: row.id, accountId: row.account_id, type: row.type, currency: row.currency,
+    id: row.id, accountId: row.account_id, accountCategoryCode: row.account_category_code, type: row.type, currency: row.currency,
     name: row.name, symbol: row.symbol, quantity: row.quantity, cost: row.cost,
     price: row.price ?? null, previousClose: row.previous_close ?? null,
     priceTimestamp: row.price_timestamp ?? null, priceDate: row.price_date ?? null,
@@ -270,6 +346,7 @@ function getState() {
     updatedAt: state.updated_at,
     data: {
       accounts,
+      accountCategories,
       holdings,
       usdJpyRate: fx?.rate ?? null,
       usdJpyTimestamp: fx?.price_timestamp ?? null,
@@ -410,7 +487,6 @@ function migrateLocalState(input) {
 
 function saveState(expectedRevision, input, snapshotMetadata = null) {
   if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0) throw new Error("expectedRevision must be a non-negative integer.");
-  const data = normalizeState(input);
   if (snapshotMetadata !== null && (!Number.isSafeInteger(snapshotMetadata.quoteFailureCount) || snapshotMetadata.quoteFailureCount < 0)) {
     throw new Error("snapshot.quoteFailureCount must be a non-negative integer.");
   }
@@ -418,6 +494,9 @@ function saveState(expectedRevision, input, snapshotMetadata = null) {
     const current = db.prepare("SELECT revision, initialized FROM app_state WHERE singleton_id = 1").get();
     if (!current.initialized) return { notInitialized: true, state: getState() };
     if (current.revision !== expectedRevision) return { conflict: true, state: getState() };
+    const existingCategories = new Map(db.prepare("SELECT id, account_category_code FROM holdings").all()
+      .map(row => [row.id, row.account_category_code]));
+    const data = normalizeState(input, existingCategories);
     upsertState(data);
     db.prepare("UPDATE app_state SET initialized = 1, revision = revision + 1, updated_at = ? WHERE singleton_id = 1").run(Date.now());
     const snapshot = snapshotMetadata === null ? null : saveDailySnapshot(data, snapshotMetadata);
