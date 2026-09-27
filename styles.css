@@ -181,19 +181,61 @@
 .asset-trend-heading h2{font-size:15px}
 .asset-trend-details{align-self:flex-start;white-space:nowrap}
 .asset-trend-details:disabled{opacity:.65;cursor:default}
-.asset-trend-content{display:grid;grid-template-columns:minmax(250px,.9fr) minmax(0,1.1fr);align-items:center;gap:18px}
-.asset-trend-summary{display:flex;flex-wrap:wrap;align-items:end;column-gap:12px;row-gap:3px;min-width:0}
-.asset-trend-summary div{display:grid;gap:3px}
-.asset-trend-summary small{color:var(--muted);font-size:10px}
-.asset-trend-summary strong{font:500 17px "DM Mono",monospace;letter-spacing:-.5px;white-space:nowrap}
-.asset-trend-rate{color:var(--muted);font:500 12px "DM Mono",monospace;white-space:nowrap}
-.asset-trend-chart-wrap{min-width:0;min-height:42px;display:grid;align-items:center}
-.asset-trend-chart{display:block;width:100%;height:42px;overflow:visible}
+.asset-trend-content{display:grid;grid-template-columns:minmax(0,1fr);gap:8px;min-width:0}
+.asset-trend-ranges{display:flex;align-items:center;gap:4px;min-width:0}
+.asset-trend-range{border:0;border-radius:5px;background:transparent;color:var(--muted);min-width:calc(3em + 20px);text-align:center;padding:5px 10px;font:500 11px "Noto Sans JP",sans-serif;white-space:nowrap;cursor:pointer}
+.asset-trend-range:hover{background:var(--teal-soft);color:var(--teal)}
+.asset-trend-range.is-active{background:var(--teal-soft);color:var(--teal);font-weight:600}
+.asset-trend-chart-wrap{position:relative;display:grid;align-items:center;min-width:0;min-height:100px}
+.asset-trend-chart{display:block;width:100%;height:100px;overflow:visible}
 .asset-trend-chart[hidden]{display:none}
-.asset-trend-line{fill:none;stroke:var(--teal);stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke}
+.asset-trend-grid-line{stroke:var(--line);stroke-width:1;opacity:.72;vector-effect:non-scaling-stroke}
+.asset-trend-area{fill:rgba(22,115,107,.1)}
+.asset-trend-line{fill:none;stroke:var(--teal);stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke}
 .asset-trend-point{fill:var(--teal);stroke:#fff;stroke-width:1.5;vector-effect:non-scaling-stroke}
 .asset-trend-point[data-complete="false"]{fill:var(--gold)}
-.asset-trend-message{color:var(--muted);font-size:10px}
+.asset-trend-axis-label{fill:var(--muted);font:11px "DM Mono","Noto Sans JP",sans-serif}
+.asset-trend-y-label{text-anchor:end}
+.asset-trend-message{color:var(--muted);font-size:11px;text-align:center}
+.trend-detail-toolbar{align-items:center}
+.trend-detail-toolbar .eyebrow{margin-bottom:4px}
+.trend-detail-toolbar .button{white-space:nowrap}
+.trend-detail-summary{display:grid;gap:8px;margin-bottom:14px;padding:21px 24px}
+.trend-detail-summary > p{color:var(--muted);font-size:12px}
+.trend-detail-summary > strong{min-width:0;font:500 clamp(23px,3vw,32px) "DM Mono","Noto Sans JP",sans-serif;overflow-wrap:anywhere}
+.trend-detail-previous{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 13px;font-size:12px}
+.trend-detail-previous > span:first-child{color:var(--muted)}
+.trend-detail-previous b,.trend-detail-previous span:last-child{font:500 13px "DM Mono","Noto Sans JP",sans-serif;white-space:nowrap}
+.trend-detail-panel{min-width:0;padding:19px 22px}
+.trend-detail-controls{display:flex;flex-wrap:wrap;align-items:end;justify-content:space-between;gap:12px 18px;margin-bottom:14px}
+.trend-detail-ranges{display:flex;flex-wrap:wrap;align-items:center;gap:4px;min-width:0}
+.trend-detail-target-control{display:grid;gap:5px;color:var(--muted);font-size:11px}
+.trend-detail-target-control select{min-width:175px;max-width:100%;font-size:13px}
+.trend-detail-chart-wrap{position:relative;min-width:0;min-height:300px}
+.trend-detail-chart{display:block;width:100%;height:300px}
+.trend-detail-chart[hidden],.trend-detail-tooltip[hidden],.trend-detail-chart-wrap .empty-state[hidden]{display:none}
+.trend-detail-chart-wrap .empty-state{min-height:300px}
+.trend-detail-chart .asset-trend-point[data-complete="false"]{fill:var(--teal)}
+.trend-detail-hit{fill:transparent;cursor:pointer}
+.trend-detail-hit:focus-visible{stroke:var(--teal);stroke-width:2;outline:none}
+.trend-detail-tooltip{position:absolute;top:8px;right:12px;z-index:1;padding:8px 11px;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--ink);font:500 11px/1.5 "DM Mono","Noto Sans JP",sans-serif;white-space:pre-line;box-shadow:0 4px 15px #12202418;pointer-events:none}
+.trend-detail-stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;margin-top:15px;padding-top:14px;border-top:1px solid var(--line)}
+.trend-detail-stats > div{display:flex;flex-wrap:wrap;align-items:baseline;gap:5px 12px;min-width:0}
+.trend-detail-stats > div > span{flex:0 0 100%;color:var(--muted);font-size:11px}
+.trend-detail-stats strong,.trend-detail-stats b{font:500 14px "DM Mono","Noto Sans JP",sans-serif;white-space:nowrap}
+@media(max-width:600px){
+  .trend-detail-toolbar{gap:10px}
+  .trend-detail-toolbar .button{padding:9px 10px}
+  .trend-detail-summary{padding:16px}
+  .trend-detail-summary > strong{font-size:clamp(20px,5.2vw,25px)}
+  .trend-detail-panel{padding:14px 10px}
+  .trend-detail-controls{display:grid;gap:12px}
+  .trend-detail-ranges{gap:3px}
+  .trend-detail-target-control select{width:100%;font-size:16px}
+  .trend-detail-chart-wrap,.trend-detail-chart-wrap .empty-state{min-height:240px}
+  .trend-detail-chart{height:240px}
+  .trend-detail-stats{grid-template-columns:minmax(0,1fr);gap:13px}
+}
 .metric strong,.account-summary-row b,.money,.gain,.account-card-value{white-space:nowrap}
 .metric-icon,.metric-sparkline{display:none}
 #dashboard-view .metric strong .metric-amount,#dashboard-view .metric strong .metric-unit{display:inline;margin:0;color:inherit;font:inherit;vertical-align:baseline}
@@ -215,19 +257,17 @@
 }
 @media(max-width:600px){
   .asset-trend-panel{margin:10px 0;padding:11px 13px}
-  .asset-trend-content{grid-template-columns:minmax(0,1fr);gap:7px}
-  .asset-trend-summary{gap:8px}
-  .asset-trend-summary strong{font-size:16px}
-  .asset-trend-rate{font-size:11px}
-  .asset-trend-chart-wrap{min-height:34px}
-  .asset-trend-chart{height:34px}
+  .asset-trend-content{gap:6px}
+  .asset-trend-ranges{justify-content:space-between;gap:1px}
+  .asset-trend-range{min-width:calc(3em + 12px);padding:5px 6px;font-size:10px}
+  .asset-trend-chart-wrap{min-height:110px}
+  .asset-trend-chart{height:110px}
 }
 
 .dashboard-insight-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:stretch;gap:14px;margin:14px 0}
 .dashboard-insight-grid .asset-trend-panel,.dashboard-insight-grid .asset-heatmap-panel{height:100%;min-width:0;margin:0;background:#fcfdfb}
-.dashboard-insight-grid .asset-trend-panel{display:grid;grid-template-rows:auto 1fr}
-.dashboard-insight-grid .asset-trend-content{min-height:112px}
-@media(min-width:901px) and (max-width:1100px){.dashboard-insight-grid .asset-trend-content{grid-template-columns:minmax(0,1fr);gap:7px}}
+.dashboard-insight-grid .asset-trend-panel{display:grid;grid-template-rows:auto 1fr;height:auto}
+.dashboard-insight-grid .asset-heatmap-panel{height:auto;align-self:start}
 .asset-heatmap-panel{display:grid;grid-template-rows:auto 1fr;padding:12px 18px}
 .asset-heatmap-heading{margin-bottom:6px}
 .asset-heatmap-heading .eyebrow{margin-bottom:3px;font-size:9px}

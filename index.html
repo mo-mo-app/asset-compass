@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Noto+Sans+JP:wght@400;500;600;700&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="styles.css?v=20260926-2" />
+    <link rel="stylesheet" href="styles.css?v=20260928-1" />
     <link rel="stylesheet" href="funds.css" />
   </head>
   <body>
@@ -67,19 +67,27 @@
           <div class="dashboard-insight-grid">
             <section class="panel asset-trend-panel" aria-labelledby="asset-trend-title">
             <div class="panel-heading asset-trend-heading">
-              <div><p class="eyebrow">ASSET TREND</p><h2 id="asset-trend-title">資産推移</h2></div>
-              <button class="text-button asset-trend-details" type="button" data-trend-details disabled aria-disabled="true">詳細を見る &gt;</button>
+              <div><p class="eyebrow">ASSET TREND</p><h2 id="asset-trend-title" class="dashboard-section-title"><svg class="dashboard-section-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 20.5h17M5.5 15.5l4-4 3 2 6-7"/><path d="M14.5 6.5H19V11"/></svg><span>資産推移</span></h2></div>
+              <button class="text-button asset-trend-details" type="button" data-trend-details>詳細を見る &gt;</button>
             </div>
             <div class="asset-trend-content">
-              <div class="asset-trend-summary">
-                <div class="asset-trend-delta"><small>前回比</small><strong id="asset-trend-delta">—</strong></div>
-                <span id="asset-trend-delta-rate" class="asset-trend-rate">—</span>
+              <div class="asset-trend-ranges" role="group" aria-label="資産推移の期間">
+                <button type="button" class="asset-trend-range is-active" data-trend-range="1m" aria-pressed="true">1ヶ月</button>
+                <button type="button" class="asset-trend-range" data-trend-range="3m" aria-pressed="false">3ヶ月</button>
+                <button type="button" class="asset-trend-range" data-trend-range="6m" aria-pressed="false">6ヶ月</button>
+                <button type="button" class="asset-trend-range" data-trend-range="ytd" aria-pressed="false">年初来</button>
+                <button type="button" class="asset-trend-range" data-trend-range="1y" aria-pressed="false">1年</button>
+                <button type="button" class="asset-trend-range" data-trend-range="all" aria-pressed="false">全期間</button>
               </div>
               <div class="asset-trend-chart-wrap">
                 <p id="asset-trend-message" class="asset-trend-message">読み込み中…</p>
-                <svg id="asset-trend-chart" class="asset-trend-chart" viewBox="0 0 320 64" preserveAspectRatio="none" role="img" aria-label="最近の総資産推移" hidden>
+                <svg id="asset-trend-chart" class="asset-trend-chart" viewBox="0 0 800 250" preserveAspectRatio="none" role="img" aria-label="選択した期間の総資産推移" hidden>
+                  <g id="asset-trend-grid"></g>
+                  <g id="asset-trend-area"></g>
                   <g id="asset-trend-lines"></g>
                   <g id="asset-trend-points"></g>
+                  <g id="asset-trend-x-labels"></g>
+                  <g id="asset-trend-y-labels"></g>
                 </svg>
               </div>
             </div>
@@ -118,6 +126,47 @@
             <div id="asset-heatmap-detail" class="heatmap-detail-content" aria-live="polite"></div>
           </section>
         </section>
+
+        <section id="trend-view" class="view">
+          <div class="toolbar trend-detail-toolbar">
+            <div><p class="eyebrow">ASSET TREND</p><h2>資産推移</h2></div>
+            <button class="button ghost" type="button" data-go="dashboard">← TOPへ戻る</button>
+          </div>
+          <section class="panel trend-detail-summary" aria-label="現在の資産額と前回比">
+            <p id="trend-detail-target-label">総資産</p>
+            <strong id="trend-detail-current">—</strong>
+            <div class="trend-detail-previous"><span>前回比</span><b id="trend-detail-previous-amount">—</b><span id="trend-detail-previous-rate">—</span></div>
+          </section>
+          <section class="panel trend-detail-panel" aria-label="資産推移グラフ">
+            <div class="trend-detail-controls">
+              <div class="trend-detail-ranges" role="group" aria-label="資産推移の表示期間">
+                <button type="button" class="asset-trend-range is-active" data-detail-trend-range="1m" aria-pressed="true">1ヶ月</button>
+                <button type="button" class="asset-trend-range" data-detail-trend-range="3m" aria-pressed="false">3ヶ月</button>
+                <button type="button" class="asset-trend-range" data-detail-trend-range="6m" aria-pressed="false">6ヶ月</button>
+                <button type="button" class="asset-trend-range" data-detail-trend-range="ytd" aria-pressed="false">年初来</button>
+                <button type="button" class="asset-trend-range" data-detail-trend-range="1y" aria-pressed="false">1年</button>
+                <button type="button" class="asset-trend-range" data-detail-trend-range="all" aria-pressed="false">全期間</button>
+              </div>
+              <label class="trend-detail-target-control"><span>表示対象</span><select id="trend-detail-account"><option value="total">総資産</option></select></label>
+            </div>
+            <div class="trend-detail-chart-wrap">
+              <p id="trend-detail-message" class="empty-state">読み込み中…</p>
+              <svg id="trend-detail-chart" class="trend-detail-chart" viewBox="0 0 800 300" preserveAspectRatio="none" role="img" aria-label="選択した資産の推移" hidden>
+                <g id="trend-detail-grid"></g>
+                <g id="trend-detail-area"></g>
+                <g id="trend-detail-lines"></g>
+                <g id="trend-detail-points"></g>
+                <g id="trend-detail-x-labels"></g>
+                <g id="trend-detail-y-labels"></g>
+              </svg>
+              <div id="trend-detail-tooltip" class="trend-detail-tooltip" role="status" hidden></div>
+            </div>
+            <div class="trend-detail-stats">
+              <div><span>期間</span><strong id="trend-detail-period">—</strong></div>
+              <div><span>期間変化</span><strong id="trend-detail-change-amount">—</strong><b id="trend-detail-change-rate">—</b></div>
+            </div>
+          </section>
+        </section>
       </main>
 
       <nav class="mobile-bottom-nav" aria-label="スマートフォン用メインメニュー">
@@ -131,6 +180,6 @@
 
     <dialog id="account-dialog"><form id="account-form" method="dialog" class="dialog-card small-dialog"><div class="dialog-heading"><div><p class="eyebrow" id="account-form-kicker">NEW ACCOUNT</p><h2 id="account-dialog-title">証券口座を追加</h2></div><button type="button" class="close" data-close="account-dialog">×</button></div><input type="hidden" id="account-id" /><label>口座名<input id="account-name" placeholder="例：SBI証券" required /></label><label>メモ（任意）<input id="account-note" placeholder="例：NISA / 特定口座" /></label><div class="dialog-actions"><button type="button" class="button ghost" data-close="account-dialog">キャンセル</button><button class="button primary" value="default">保存する</button></div></form></dialog>
     <script src="symbols.js?v=20260927-1"></script>
-    <script src="app.js?v=20260927-1"></script>
+    <script src="app.js?v=20260928-1"></script>
   </body>
 </html>

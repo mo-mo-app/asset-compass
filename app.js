@@ -31,6 +31,9 @@ let serverInitialized = false;
 let serverConnected = false;
 let snapshotResponseCache = null;
 let snapshotFetchPromise = null;
+let selectedAssetTrendRange = "1m";
+let selectedTrendDetailRange = "1m";
+let selectedTrendDetailAccountId = "total";
 
 const $ = (s) => document.querySelector(s);
 const cloneData = value => JSON.parse(JSON.stringify(value));
@@ -218,7 +221,8 @@ function render() {
   $("#usd-jpy-rate").textContent = Number.isFinite(fxRate) ? `USD/JPY ${fxRate.toFixed(2)}` : "USD/JPY —";
   $("#usd-jpy-timestamp").textContent = Number.isFinite(data.usdJpyTimestamp) ? `為替日時 ${formatDateTime(data.usdJpyTimestamp)}` : "";
   const heatmapGroups = groupHeatmapHoldings(holdings);
-  renderAllocation(total); renderAccountSummary(); renderAssetHeatmap(heatmapGroups); renderAssetHeatmapDetail(heatmapGroups); renderDashboardHoldings(); renderHoldingsTable(); renderAccounts(); renderAccountOptions();
+  renderAllocation(total); renderAccountSummary(); renderAssetHeatmap(heatmapGroups); renderAssetHeatmapDetail(heatmapGroups); renderDashboardHoldings(); renderHoldingsTable(); renderAccounts(); renderAccountOptions(); renderTrendDetailAccountOptions();
+  if (snapshotResponseCache && $("#trend-view").classList.contains("active")) renderAssetTrendDetail(snapshotResponseCache);
 }
 function renderAllocation(total) {
   const types = ["日本株", "米国株", "投資信託"].map(type => [type, data.holdings.filter(h => h.type === type && hasValuation(h)).reduce((n,h) => n + valueOf(h), 0)]).filter(x => x[1]);
@@ -560,65 +564,61 @@ function shiftSnapshotDate(date, days) {
   shifted.setUTCFullYear(Number(parts[1]), Number(parts[2]) - 1, Number(parts[3]) + days);
   return `${String(shifted.getUTCFullYear()).padStart(4, "0")}-${String(shifted.getUTCMonth() + 1).padStart(2, "0")}-${String(shifted.getUTCDate()).padStart(2, "0")}`;
 }
-function renderAssetTrend(response) {
-  const series = buildSnapshotSeries(response, "total");
-  const latest = series.filter(point => point.valueJpy !== null);
-  const latestPoint = latest[latest.length - 1] || null;
-  const previousPoint = latest.length > 1 ? latest[latest.length - 2] : null;
-  const deltaValue = $("#asset-trend-delta");
-  const deltaRate = $("#asset-trend-delta-rate");
-  const message = $("#asset-trend-message");
-  const chart = $("#asset-trend-chart");
-  const lines = $("#asset-trend-lines");
-  const markers = $("#asset-trend-points");
-  const totalSparkline = $("#total-value-sparkline");
-  const totalSparklinePath = $("#total-value-sparkline-path");
-  totalSparkline.hidden = true;
-  totalSparklinePath.replaceChildren();
-
-  deltaValue.className = "";
-  deltaRate.className = "asset-trend-rate";
-  if (previousPoint) {
-    const delta = latestPoint.valueJpy - previousPoint.valueJpy;
-    deltaValue.textContent = signed(delta);
-    const changeClass = delta > 0 ? "positive" : delta < 0 ? "negative" : "";
-    deltaValue.className = changeClass;
-    deltaRate.className = `asset-trend-rate${changeClass ? ` ${changeClass}` : ""}`;
-    const rate = previousPoint.valueJpy > 0 ? delta / previousPoint.valueJpy * 100 : null;
-    deltaRate.textContent = rate === null ? "—" : `${rate > 0 ? "+" : ""}${rate.toFixed(2)}%`;
-  } else {
-    deltaValue.textContent = "—";
-    deltaRate.textContent = "—";
-  }
-
-  const rangeEnd = typeof response?.to === "string" ? response.to : series[series.length - 1]?.date;
-  const cutoff = shiftSnapshotDate(rangeEnd, -29);
-  const recentSeries = cutoff ? series.filter(point => point.date >= cutoff && point.date <= rangeEnd) : series.slice(-30);
-  const recentValues = recentSeries.filter(point => point.valueJpy !== null);
-  lines.replaceChildren();
-  markers.replaceChildren();
-  if (!recentValues.length) {
-    chart.hidden = true;
-    message.hidden = false;
-    message.textContent = series.length ? "最近の評価額データはありません" : "価格更新後に資産推移を表示します";
-    return;
-  }
-
-  message.hidden = true;
-  chart.hidden = false;
-  const values = recentValues.map(point => point.valueJpy);
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const width = 320;
-  const height = 64;
-  const padding = 7;
-  const coordinates = recentSeries.map((point, index) => {
-    if (point.valueJpy === null) return null;
-    const x = recentSeries.length < 2 ? width / 2 : index / (recentSeries.length - 1) * width;
-    const y = max === min ? height / 2 : padding + (max - point.valueJpy) / (max - min) * (height - padding * 2);
-    return { point, x, y };
-  });
-
+function shiftSnapshotDateByMonths(date, months) {
+  const parts = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date || "");
+  if (!parts || !Number.isInteger(months)) return null;
+  const year = Number(parts[1]);
+  const monthIndex = Number(parts[2]) - 1;
+  const shiftedMonth = year * 12 + monthIndex + months;
+  const targetYear = Math.floor(shiftedMonth / 12);
+  const targetMonthIndex = ((shiftedMonth % 12) + 12) % 12;
+  const monthEnd = new Date(0);
+  monthEnd.setUTCHours(0, 0, 0, 0);
+  monthEnd.setUTCFullYear(targetYear, targetMonthIndex + 1, 0);
+  const targetDay = Math.min(Number(parts[3]), monthEnd.getUTCDate());
+  return `${String(targetYear).padStart(4, "0")}-${String(targetMonthIndex + 1).padStart(2, "0")}-${String(targetDay).padStart(2, "0")}`;
+}
+function filterSnapshotSeriesByRange(series, range = "1m") {
+  const ordered = Array.isArray(series)
+    ? series.filter(point => /^\d{4}-\d{2}-\d{2}$/.test(point.date)).slice().sort((a, b) => a.date.localeCompare(b.date))
+    : [];
+  const months = { "1m": 1, "3m": 3, "6m": 6, "1y": 12 }[range];
+  if ((!months && range !== "ytd") || !ordered.length) return ordered;
+  const latestDate = ordered[ordered.length - 1].date;
+  const cutoff = range === "ytd" ? `${latestDate.slice(0, 4)}-01-01` : shiftSnapshotDateByMonths(latestDate, -months);
+  return cutoff ? ordered.filter(point => point.date >= cutoff && point.date <= latestDate) : ordered;
+}
+function calculateSnapshotChange(series) {
+  const valued = Array.isArray(series) ? series.filter(point => Number.isFinite(point.valueJpy)) : [];
+  if (valued.length < 2) return { valueJpy: null, ratePercent: null };
+  const previous = valued[valued.length - 2];
+  const latest = valued[valued.length - 1];
+  const valueJpy = latest.valueJpy - previous.valueJpy;
+  return { valueJpy, ratePercent: previous.valueJpy > 0 ? valueJpy / previous.valueJpy * 100 : null };
+}
+function calculatePeriodChange(series) {
+  const valued = Array.isArray(series) ? series.filter(point => Number.isFinite(point.valueJpy)) : [];
+  if (valued.length < 2) return { valueJpy: null, ratePercent: null };
+  const first = valued[0].valueJpy;
+  const change = valued[valued.length - 1].valueJpy - first;
+  return { valueJpy: change, ratePercent: first > 0 ? change / first * 100 : null };
+}
+function formatSnapshotRate(rate) {
+  return Number.isFinite(rate) ? `${rate > 0 ? "+" : ""}${rate.toFixed(2)}%` : "—";
+}
+function formatSnapshotAxisValue(value) {
+  const absolute = Math.abs(value);
+  if (absolute >= 100000000) return `${number.format(value / 100000000)}億`;
+  if (absolute >= 10000) return `${number.format(value / 10000)}万`;
+  return number.format(value);
+}
+function niceSnapshotStep(value) {
+  if (!(value > 0) || !Number.isFinite(value)) return 1;
+  const magnitude = 10 ** Math.floor(Math.log10(value));
+  const normalized = value / magnitude;
+  return (normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10) * magnitude;
+}
+function buildSnapshotSegments(coordinates) {
   const segments = [];
   let segment = [];
   for (const coordinate of coordinates) {
@@ -626,43 +626,203 @@ function renderAssetTrend(response) {
     else if (segment.length) { segments.push(segment); segment = []; }
   }
   if (segment.length) segments.push(segment);
-  const pathData = segments.filter(points => points.length > 1).map(points =>
-    points.map((point, index) => `${index ? "L" : "M"}${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(" ")
+  return segments;
+}
+function renderTotalValueSparkline(series) {
+  const chart = $("#total-value-sparkline");
+  const pathGroup = $("#total-value-sparkline-path");
+  setSvgHidden(chart, true);
+  pathGroup.replaceChildren();
+  const latestDate = series[series.length - 1]?.date;
+  const cutoff = shiftSnapshotDate(latestDate, -29);
+  const recent = cutoff ? series.filter(point => point.date >= cutoff && point.date <= latestDate) : series.slice(-30);
+  const valid = recent.filter(point => point.valueJpy !== null);
+  if (valid.length < 2) return;
+  const min = Math.min(...valid.map(point => point.valueJpy));
+  const max = Math.max(...valid.map(point => point.valueJpy));
+  const width = 320;
+  const height = 64;
+  const padding = 7;
+  const coordinates = recent.map((point, index) => {
+    if (point.valueJpy === null) return null;
+    const x = recent.length < 2 ? width / 2 : index / (recent.length - 1) * width;
+    const y = max === min ? height / 2 : padding + (max - point.valueJpy) / (max - min) * (height - padding * 2);
+    return { x, y };
+  });
+  const paths = buildSnapshotSegments(coordinates).filter(segment => segment.length > 1).map(segment =>
+    segment.map((point, index) => `${index ? "L" : "M"}${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(" ")
   );
-  lines.innerHTML = pathData.map(path => `<path class="asset-trend-line" d="${path}" />`).join("");
-  if (pathData.length) {
-    totalSparklinePath.innerHTML = pathData.map(path => `<path class="metric-sparkline-line" d="${path}" />`).join("");
-    totalSparkline.hidden = false;
+  if (!paths.length) return;
+  pathGroup.innerHTML = paths.map(path => `<path class="metric-sparkline-line" d="${path}" />`).join("");
+  setSvgHidden(chart, false);
+}
+function setSvgHidden(chart, hidden) {
+  chart.hidden = hidden;
+  chart.toggleAttribute?.("hidden", hidden);
+}
+function drawSnapshotChart(series, prefix, range, { interactive = false } = {}) {
+  const chart = $(`#${prefix}-chart`);
+  const grid = $(`#${prefix}-grid`);
+  const area = $(`#${prefix}-area`);
+  const lines = $(`#${prefix}-lines`);
+  const markers = $(`#${prefix}-points`);
+  const xLabels = $(`#${prefix}-x-labels`);
+  const yLabels = $(`#${prefix}-y-labels`);
+  for (const group of [grid, area, lines, markers, xLabels, yLabels]) group.replaceChildren();
+
+  const values = series.filter(point => Number.isFinite(point.valueJpy)).map(point => point.valueJpy);
+  if (!values.length) {
+    setSvgHidden(chart, true);
+    return false;
   }
-  markers.innerHTML = coordinates.filter(Boolean).map(({ point, x, y }) =>
-    `<circle class="asset-trend-point" data-date="${point.date}" data-complete="${point.isComplete}" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.5" />`
-  ).join("");
+
+  setSvgHidden(chart, false);
+  const chartBounds = chart.getBoundingClientRect ? chart.getBoundingClientRect() : null;
+  const measuredWidth = chartBounds?.width || 0;
+  const width = Number.isFinite(measuredWidth) && measuredWidth > 0 ? measuredWidth : 800;
+  const measuredHeight = chartBounds?.height || 0;
+  const height = Number.isFinite(measuredHeight) && measuredHeight > 0 ? measuredHeight : interactive ? 300 : 100;
+  const plotLeft = Math.max(58, width * .095);
+  const plotRight = width - 14;
+  const plotTop = Math.max(10, height * .08);
+  const plotBottom = height - (interactive ? 28 : Math.max(22, height * .22));
+  const plotWidth = Math.max(1, plotRight - plotLeft);
+  const plotHeight = plotBottom - plotTop;
+  chart.setAttribute?.("viewBox", `0 0 ${width.toFixed(1)} ${height}`);
+
+  let min = Math.min(...values);
+  let max = Math.max(...values);
+  if (min === max) {
+    const padding = Math.max(Math.abs(min) * .02, 1);
+    min -= padding;
+    max += padding;
+  }
+  const step = niceSnapshotStep((max - min) / 4);
+  const axisMin = Math.floor(min / step) * step;
+  const axisMax = Math.ceil(max / step) * step;
+  const tickValues = [];
+  for (let tick = axisMin, count = 0; tick <= axisMax + step * .001 && count < 8; tick += step, count++) tickValues.push(tick);
+  grid.innerHTML = tickValues.map(tick => {
+    const y = plotTop + (axisMax - tick) / (axisMax - axisMin || 1) * plotHeight;
+    return `<line class="asset-trend-grid-line" x1="${plotLeft.toFixed(1)}" y1="${y.toFixed(1)}" x2="${plotRight.toFixed(1)}" y2="${y.toFixed(1)}" />`;
+  }).join("");
+  yLabels.innerHTML = tickValues.map(tick => {
+    const y = plotTop + (axisMax - tick) / (axisMax - axisMin || 1) * plotHeight + 4;
+    return `<text class="asset-trend-axis-label asset-trend-y-label" x="${(plotLeft - 9).toFixed(1)}" y="${y.toFixed(1)}">${formatSnapshotAxisValue(tick)}</text>`;
+  }).join("");
+
+  const coordinates = series.map((point, index) => {
+    if (!Number.isFinite(point.valueJpy)) return null;
+    const x = plotLeft + (series.length < 2 ? plotWidth / 2 : index / (series.length - 1) * plotWidth);
+    const y = plotTop + (axisMax - point.valueJpy) / (axisMax - axisMin || 1) * plotHeight;
+    return { point, x, y };
+  });
+  const segments = buildSnapshotSegments(coordinates);
+  const linePaths = segments.filter(segment => segment.length > 1).map(segment =>
+    segment.map((point, index) => `${index ? "L" : "M"}${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(" ")
+  );
+  const areaPaths = segments.filter(segment => segment.length > 1).map(segment => {
+    const line = segment.map(point => `L${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(" ");
+    return `M${segment[0].x.toFixed(1)},${plotBottom.toFixed(1)} ${line} L${segment[segment.length - 1].x.toFixed(1)},${plotBottom.toFixed(1)} Z`;
+  });
+  area.innerHTML = areaPaths.map(path => `<path class="asset-trend-area" d="${path}" />`).join("");
+  lines.innerHTML = linePaths.map(path => `<path class="asset-trend-line" d="${path}" />`).join("");
+  markers.innerHTML = coordinates.filter(Boolean).map(({ point, x, y }) => {
+    const amount = formatJpyAmount(point.valueJpy);
+    const marker = `<circle class="asset-trend-point" data-date="${point.date}" data-complete="${point.isComplete}" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${interactive ? 4 : 3}"><title>${point.tooltipDate}・${amount}${point.isComplete ? "" : "・不完全なスナップショット"}</title></circle>`;
+    return interactive ? `${marker}<circle class="trend-detail-hit" data-trend-point data-date="${point.tooltipDate}" data-value="${amount}" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="13" tabindex="0" aria-label="${point.tooltipDate}・${amount}" />` : marker;
+  }).join("");
+
+  const distinctYears = new Set(series.map(point => point.date.slice(0, 4)));
+  const xLabelCount = Math.min(series.length, 5);
+  const xIndices = xLabelCount < 2 ? [0] : Array.from({ length: xLabelCount }, (_, index) => Math.round(index * (series.length - 1) / (xLabelCount - 1)));
+  xLabels.innerHTML = [...new Set(xIndices)].map((index, labelIndex, indices) => {
+    const point = series[index];
+    const x = plotLeft + (series.length < 2 ? plotWidth / 2 : index / (series.length - 1) * plotWidth);
+    const label = range === "all" && distinctYears.size > 1 ? point.date.slice(0, 4) : point.label;
+    const anchor = labelIndex === 0 ? "start" : labelIndex === indices.length - 1 ? "end" : "middle";
+    return label ? `<text class="asset-trend-axis-label asset-trend-x-label" x="${x.toFixed(1)}" y="${(height - 4).toFixed(1)}" text-anchor="${anchor}">${escapeHTML(label)}</text>` : "";
+  }).join("");
+  return true;
+}
+function renderAssetTrend(response) {
+  const allSeries = filterSnapshotSeriesByRange(buildSnapshotSeries(response, "total"), "all");
+  const series = filterSnapshotSeriesByRange(allSeries, selectedAssetTrendRange);
+  renderTotalValueSparkline(allSeries);
+  const hasValues = drawSnapshotChart(series, "asset-trend", selectedAssetTrendRange);
+  const message = $("#asset-trend-message");
+  message.hidden = hasValues;
+  if (!hasValues) message.textContent = allSeries.length
+    ? series.length ? "選択した期間に評価額データはありません" : "選択した期間のスナップショットはありません"
+    : "価格更新後に資産推移を表示します";
+}
+function renderTrendDetailAccountOptions() {
+  const selector = $("#trend-detail-account");
+  if (selectedTrendDetailAccountId !== "total" && !data.accounts.some(account => account.id === selectedTrendDetailAccountId)) selectedTrendDetailAccountId = "total";
+  selector.innerHTML = `<option value="total">総資産</option>${data.accounts.map(account => `<option value="${escapeHTML(account.id)}">${escapeHTML(account.name)}</option>`).join("")}`;
+  selector.value = selectedTrendDetailAccountId;
+}
+function renderAssetTrendDetail(response) {
+  const allSeries = filterSnapshotSeriesByRange(buildSnapshotSeries(response, selectedTrendDetailAccountId), "all");
+  const series = filterSnapshotSeriesByRange(allSeries, selectedTrendDetailRange);
+  const valued = series.filter(point => Number.isFinite(point.valueJpy));
+  const latest = [...allSeries].reverse().find(point => Number.isFinite(point.valueJpy));
+  const previous = calculateSnapshotChange(allSeries);
+  const periodChange = calculatePeriodChange(series);
+  $("#trend-detail-target-label").textContent = selectedTrendDetailAccountId === "total" ? "総資産" : data.accounts.find(account => account.id === selectedTrendDetailAccountId)?.name || "総資産";
+  $("#trend-detail-current").textContent = latest ? formatJpyAmount(latest.valueJpy) : "—";
+  const previousAmount = $("#trend-detail-previous-amount");
+  previousAmount.textContent = signed(previous.valueJpy);
+  previousAmount.className = Number.isFinite(previous.valueJpy) ? gainClass(previous.valueJpy) : "";
+  const previousRate = $("#trend-detail-previous-rate");
+  previousRate.textContent = formatSnapshotRate(previous.ratePercent);
+  previousRate.className = Number.isFinite(previous.ratePercent) ? gainClass(previous.ratePercent) : "";
+
+  const first = valued[0];
+  const last = valued[valued.length - 1];
+  const spansYears = first && last && first.date.slice(0, 4) !== last.date.slice(0, 4);
+  const dateLabel = point => point ? spansYears ? point.tooltipDate : point.label : "";
+  $("#trend-detail-period").textContent = first ? first === last ? dateLabel(first) : `${dateLabel(first)} → ${dateLabel(last)}` : "—";
+  const changeAmount = $("#trend-detail-change-amount");
+  changeAmount.textContent = signed(periodChange.valueJpy);
+  changeAmount.className = Number.isFinite(periodChange.valueJpy) ? gainClass(periodChange.valueJpy) : "";
+  const changeRate = $("#trend-detail-change-rate");
+  changeRate.textContent = formatSnapshotRate(periodChange.ratePercent);
+  changeRate.className = Number.isFinite(periodChange.ratePercent) ? gainClass(periodChange.ratePercent) : "";
+
+  $("#trend-detail-tooltip").hidden = true;
+  const hasValues = drawSnapshotChart(series, "trend-detail", selectedTrendDetailRange, { interactive: true });
+  const message = $("#trend-detail-message");
+  message.hidden = hasValues;
+  if (!hasValues) message.textContent = !response ? "資産推移を読み込めませんでした"
+    : !allSeries.length ? "価格更新後に資産推移を表示します"
+    : !series.length ? "選択した期間のスナップショットはありません"
+    : "選択した対象の評価額データはありません";
 }
 async function loadAssetTrend({ refresh = false } = {}) {
   if (snapshotFetchPromise) await snapshotFetchPromise;
   if (!refresh && snapshotResponseCache) {
     renderAssetTrend(snapshotResponseCache);
+    if ($("#trend-view").classList.contains("active")) renderAssetTrendDetail(snapshotResponseCache);
     return snapshotResponseCache;
   }
   snapshotFetchPromise = (async () => {
     try {
-      const response = await fetch("/api/v1/snapshots", { cache: "no-store" });
+      const response = await fetch("/api/v1/snapshots?from=0001-01-01", { cache: "no-store" });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || !Array.isArray(payload.snapshots)) throw new Error(payload.error || "資産推移を取得できませんでした");
       snapshotResponseCache = payload;
       renderAssetTrend(payload);
+      if ($("#trend-view").classList.contains("active")) renderAssetTrendDetail(payload);
       return payload;
     } catch {
       if (snapshotResponseCache) renderAssetTrend(snapshotResponseCache);
       else {
-        $("#asset-trend-delta").textContent = "—";
-        $("#asset-trend-delta-rate").textContent = "—";
-        $("#asset-trend-delta").className = "";
-        $("#asset-trend-delta-rate").className = "asset-trend-rate";
-        $("#asset-trend-chart").hidden = true;
+        setSvgHidden($("#asset-trend-chart"), true);
         $("#asset-trend-message").hidden = false;
         $("#asset-trend-message").textContent = "資産推移を読み込めませんでした";
       }
+      if ($("#trend-view").classList.contains("active")) renderAssetTrendDetail(snapshotResponseCache);
       return null;
     } finally {
       snapshotFetchPromise = null;
@@ -756,25 +916,65 @@ async function updateAll() {
 function showAppView(viewName) {
   const view = $(`#${viewName}-view`);
   if (!view) return;
-  const selectedNavView = viewName === "heatmap" ? "dashboard" : viewName;
+  const selectedNavView = viewName === "heatmap" || viewName === "trend" ? "dashboard" : viewName;
   document.querySelectorAll(".nav-item").forEach(item => item.classList.toggle("active", item.dataset.view === selectedNavView));
   document.querySelectorAll(".view").forEach(item => item.classList.toggle("active", item === view));
   $("#page-title").textContent = {
-    dashboard: "資産の全体像", holdings: "保有資産", accounts: "証券口座", heatmap: "資産ヒートマップ"
+    dashboard: "資産の全体像", holdings: "保有資産", accounts: "証券口座", heatmap: "資産ヒートマップ", trend: "資産推移"
   }[viewName];
-  if (viewName === "heatmap") window.scrollTo(0, 0);
+  if (viewName === "dashboard" && snapshotResponseCache) renderAssetTrend(snapshotResponseCache);
+  if (viewName === "trend") {
+    renderTrendDetailAccountOptions();
+    if (snapshotResponseCache) renderAssetTrendDetail(snapshotResponseCache);
+    else void loadAssetTrend();
+  }
+  if (viewName === "heatmap" || viewName === "trend") window.scrollTo(0, 0);
+}
+
+function showTrendPointTooltip(point) {
+  if (!point) return;
+  const tooltip = $("#trend-detail-tooltip");
+  tooltip.textContent = `${point.dataset.date}\n${point.dataset.value}`;
+  tooltip.hidden = false;
 }
 
 document.addEventListener("click", e => {
+  const trendRange = e.target.closest("[data-trend-range]");
+  if (trendRange) {
+    selectedAssetTrendRange = trendRange.dataset.trendRange;
+    document.querySelectorAll("[data-trend-range]").forEach(button => {
+      const isActive = button === trendRange;
+      button.classList.toggle("is-active", isActive);
+      button.setAttribute("aria-pressed", String(isActive));
+    });
+    if (snapshotResponseCache) renderAssetTrend(snapshotResponseCache);
+  }
+  const detailTrendRange = e.target.closest("[data-detail-trend-range]");
+  if (detailTrendRange) {
+    selectedTrendDetailRange = detailTrendRange.dataset.detailTrendRange;
+    document.querySelectorAll("[data-detail-trend-range]").forEach(button => {
+      const isActive = button === detailTrendRange;
+      button.classList.toggle("is-active", isActive);
+      button.setAttribute("aria-pressed", String(isActive));
+    });
+    if (snapshotResponseCache) renderAssetTrendDetail(snapshotResponseCache);
+  }
   const nav=e.target.closest(".nav-item");
   if(nav)showAppView(nav.dataset.view);
   const heatmapDetails=e.target.closest("[data-heatmap-details]");if(heatmapDetails)showAppView("heatmap");
+  const trendDetails=e.target.closest("[data-trend-details]");if(trendDetails)showAppView("trend");
   const go=e.target.closest("[data-go]");if(go)document.querySelector(`[data-view="${go.dataset.go}"]`).click();
   if(e.target.id==="add-holding")openHolding();if(e.target.id==="add-account")openAccount();
   const eh=e.target.closest("[data-edit-holding]");if(eh)openHolding(eh.dataset.editHolding);
   const ea=e.target.closest("[data-edit-account]");if(ea)openAccount(ea.dataset.editAccount);
   const close=e.target.closest("[data-close]");if(close)$("#"+close.dataset.close).close();
 });
+const trendDetailChart = $("#trend-detail-chart");
+trendDetailChart.addEventListener("pointerover", event => showTrendPointTooltip(event.target.closest?.(".trend-detail-hit")));
+trendDetailChart.addEventListener("pointerleave", event => { if (event.pointerType !== "touch") $("#trend-detail-tooltip").hidden = true; });
+trendDetailChart.addEventListener("focusin", event => showTrendPointTooltip(event.target.closest?.(".trend-detail-hit")));
+trendDetailChart.addEventListener("focusout", () => { $("#trend-detail-tooltip").hidden = true; });
+trendDetailChart.addEventListener("click", event => showTrendPointTooltip(event.target.closest?.(".trend-detail-hit")));
 $("#holding-form").addEventListener("submit",async e=>{
   e.preventDefault();
   const previousData=cloneData(data), id=$("#holding-id").value;
@@ -807,12 +1007,18 @@ $("#account-form").addEventListener("submit",async e=>{
   catch { /* Keep the dialog open so the user can retry or reapply after a conflict. */ }
 });
 $("#filter-account").addEventListener("change",renderHoldingsTable);$("#filter-type").addEventListener("change",renderHoldingsTable);$("#holding-type").addEventListener("change",updateHoldingFormLabels);$("#refresh-all").addEventListener("click",updateAll);$("#lookup-name").addEventListener("click",lookupHoldingName);
+$("#trend-detail-account").addEventListener("change", event => {
+  selectedTrendDetailAccountId = event.target.value;
+  if (snapshotResponseCache) renderAssetTrendDetail(snapshotResponseCache);
+});
 $("#migrate-local").addEventListener("click",migrateLocalData);
 $("#retry-sync").addEventListener("click",loadServerState);
 let heatmapResizeTimer = null;
 window.addEventListener("resize", () => {
   clearTimeout(heatmapResizeTimer);
   heatmapResizeTimer = setTimeout(() => {
+    if (snapshotResponseCache && $("#dashboard-view").classList.contains("active")) renderAssetTrend(snapshotResponseCache);
+    if (snapshotResponseCache && $("#trend-view").classList.contains("active")) renderAssetTrendDetail(snapshotResponseCache);
     if ($("#heatmap-view").classList.contains("active")) renderAssetHeatmapDetail(groupHeatmapHoldings(data.holdings || []));
   }, 120);
 });
