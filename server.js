@@ -9,9 +9,9 @@ const root = __dirname;
 let migration = null;
 const port = Number(process.env.ASSET_COMPASS_PORT) || 8766;
 const bindLan = process.env.ASSET_COMPASS_BIND_LAN !== "false";
-const publicFiles = new Set(["index.html", "app.js", "symbols.js", "styles.css", "funds.css"]);
+const publicFiles = new Set(["index.html", "app.js", "symbols.js", "styles.css", "funds.css", "assets/asset-compass-logo.svg", "assets/asset-compass-icon.svg", "assets/asset-compass-mono.svg", "assets/favicon.svg", "assets/apple-touch-icon.png", "assets/icons/asset-weather-storm.svg", "assets/icons/asset-weather-rain.svg", "assets/icons/asset-weather-cloud.svg", "assets/icons/asset-weather-partly-cloudy.svg", "assets/icons/asset-weather-sunny.svg", "assets/icons/asset-weather-very-sunny.svg", "assets/icons/asset-weather-special.svg"]);
 
-const contentTypes = {".html":"text/html; charset=utf-8",".js":"text/javascript; charset=utf-8",".css":"text/css; charset=utf-8"};
+const contentTypes = {".html":"text/html; charset=utf-8",".js":"text/javascript; charset=utf-8",".css":"text/css; charset=utf-8",".svg":"image/svg+xml",".png":"image/png"};
 const send = (res, status, body, type="application/json; charset=utf-8") => {
   res.writeHead(status, {"Content-Type":type,"Cache-Control":"no-store"});
   res.end(Buffer.isBuffer(body) ? body : (typeof body === "string" ? body : JSON.stringify(body)));

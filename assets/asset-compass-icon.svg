@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 180" role="img" aria-labelledby="title">
+  <title id="title">Asset Compass</title>
+  <rect width="180" height="180" fill="#0f2b2d" />
+  <circle cx="90" cy="90" r="55.5" fill="none" stroke="#57d6b1" stroke-width="9" />
+  <path d="M90 32.5 123 45.6 96 96Z" fill="#57d6b1" />
+  <path d="M90 147.5 57 134.4 84 84Z" fill="#f8faf8" />
+  <circle cx="90" cy="90" r="5.6" fill="#0f2b2d" />
+</svg>

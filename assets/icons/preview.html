@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Asset Compass 資産天気アイコン</title>
+  <style>
+    *{box-sizing:border-box}body{margin:0;padding:32px;background:#f7f8f4;color:#122024;font:14px/1.5 "Noto Sans JP",sans-serif}
+    h1{margin:0 0 8px;font-size:22px}p{margin:0 0 24px;color:#708083}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}
+    article{display:grid;grid-template-columns:50px 1fr;align-items:center;gap:14px;padding:16px;border:1px solid #dce4df;border-radius:10px;background:#fff}
+    article img{width:36px;height:36px}.name{font-weight:600}.key{color:#708083;font:12px "DM Mono",monospace}
+    .dark{margin-top:24px;padding:20px;border-radius:12px;background:#15282a;color:#eaf0eb}.dark h2{margin:0 0 14px;font-size:15px}.dark .grid article{background:#1b3435;border-color:#395052}.dark .key{color:#adbfbc}
+    @media(max-width:520px){body{padding:18px}.grid{grid-template-columns:repeat(2,minmax(0,1fr))}article{grid-template-columns:1fr;gap:8px;padding:12px}article img{width:32px;height:32px}}
+  </style>
+</head>
+<body>
+  <h1>資産天気アイコン</h1>
+  <p>同じSVGを明るい背景と濃色背景で確認できます。</p>
+  <div class="grid">
+    <article><img src="asset-weather-storm.svg" alt="" /><div><div class="name">雷雨</div><div class="key">storm</div></div></article>
+    <article><img src="asset-weather-rain.svg" alt="" /><div><div class="name">雨</div><div class="key">rain</div></div></article>
+    <article><img src="asset-weather-cloud.svg" alt="" /><div><div class="name">くもり</div><div class="key">cloud</div></div></article>
+    <article><img src="asset-weather-partly-cloudy.svg" alt="" /><div><div class="name">晴れ時々くもり</div><div class="key">partly-cloudy</div></div></article>
+    <article><img src="asset-weather-sunny.svg" alt="" /><div><div class="name">晴れ</div><div class="key">sunny</div></div></article>
+    <article><img src="asset-weather-very-sunny.svg" alt="" /><div><div class="name">強い晴れ</div><div class="key">very-sunny</div></div></article>
+    <article><img src="asset-weather-special.svg" alt="" /><div><div class="name">特別に良い状態</div><div class="key">special</div></div></article>
+  </div>
+  <section class="dark"><h2>濃色背景での表示</h2><div class="grid">
+    <article><img src="asset-weather-storm.svg" alt="" /><div><div class="name">雷雨</div><div class="key">storm</div></div></article>
+    <article><img src="asset-weather-rain.svg" alt="" /><div><div class="name">雨</div><div class="key">rain</div></div></article>
+    <article><img src="asset-weather-cloud.svg" alt="" /><div><div class="name">くもり</div><div class="key">cloud</div></div></article>
+    <article><img src="asset-weather-partly-cloudy.svg" alt="" /><div><div class="name">晴れ時々くもり</div><div class="key">partly-cloudy</div></div></article>
+    <article><img src="asset-weather-sunny.svg" alt="" /><div><div class="name">晴れ</div><div class="key">sunny</div></div></article>
+    <article><img src="asset-weather-very-sunny.svg" alt="" /><div><div class="name">強い晴れ</div><div class="key">very-sunny</div></div></article>
+    <article><img src="asset-weather-special.svg" alt="" /><div><div class="name">特別に良い状態</div><div class="key">special</div></div></article>
+  </div></section>
+</body>
+</html>

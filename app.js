@@ -193,6 +193,41 @@ function dailyChangePercent(holding) {
   return (holding.price - holding.previousClose) / holding.previousClose * 100;
 }
 
+const ASSET_WEATHER = {
+  storm: { label: "荒天", icon: "storm" },
+  rain: { label: "雨", icon: "rain" },
+  cloud: { label: "くもり", icon: "cloud" },
+  "partly-cloudy": { label: "晴れ時々くもり", icon: "partly-cloudy" },
+  sunny: { label: "晴れ", icon: "sunny" },
+  "very-sunny": { label: "強い晴れ", icon: "very-sunny" },
+  special: { label: "特別に良い状態", icon: "special" }
+};
+function getAssetWeatherState(changePercent) {
+  if (!Number.isFinite(changePercent)) return null;
+  if (changePercent >= 5) return "special";
+  if (changePercent >= 3) return "very-sunny";
+  if (changePercent >= 0.5) return "sunny";
+  if (changePercent >= -0.5) return "partly-cloudy";
+  if (changePercent > -3) return "cloud";
+  if (changePercent >= -5) return "rain";
+  return "storm";
+}
+function renderAssetWeatherIcon(changePercent) {
+  const icon = $("#asset-weather-icon");
+  const state = getAssetWeatherState(changePercent);
+  if (!state) {
+    icon.hidden = true;
+    icon.alt = "";
+    icon.title = "";
+    return;
+  }
+  const weather = ASSET_WEATHER[state];
+  icon.src = `/assets/icons/asset-weather-${weather.icon}.svg`;
+  icon.alt = `資産天気: ${weather.label}`;
+  icon.title = weather.label;
+  icon.hidden = false;
+}
+
 function render() {
   const holdings = data.holdings;
   const quoted = holdings.filter(hasQuote);
@@ -211,8 +246,10 @@ function render() {
   $("#total-gain-rate").className = gainClass(gain);
   $("#day-gain").innerHTML = day !== null ? formatMetricJpyAmount(day, true) : "—";
   $("#day-gain").className = gainClass(day);
-  $("#day-gain-rate").textContent = day !== null && total - day > 0 ? `${(day / (total - day) * 100).toFixed(2)}%` : "—";
+  const dayRate = day !== null && total - day > 0 ? day / (total - day) * 100 : null;
+  $("#day-gain-rate").textContent = dayRate !== null ? `${dayRate.toFixed(2)}%` : "—";
   $("#day-gain-rate").className = gainClass(day);
+  renderAssetWeatherIcon(dayRate);
   $("#asset-count").textContent = holdings.length ? `${holdings.length} 銘柄` : "";
   $("#quote-status").textContent = holdings.length ? `価格取得済み ${quoted.length}/${holdings.length}件${missingQuotes ? ` ／ 未取得 ${missingQuotes}件` : ""}` : "登録済みの銘柄はありません";
   const failedQuotes = holdings.filter(h => h.quoteStatus === "failed").length;

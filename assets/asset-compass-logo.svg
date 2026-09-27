@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 250 48" role="img" aria-labelledby="title">
+  <title id="title">asset compass</title>
+  <circle cx="24" cy="24" r="15.3" fill="none" stroke="#0f2b2d" stroke-width="3.4" />
+  <path d="M24 8.9 32.8 12.4 25.6 25.6Z" fill="#57d6b1" />
+  <path d="M24 39.1 15.2 35.6 22.4 22.4Z" fill="#0f2b2d" />
+  <circle cx="24" cy="24" r="1.5" fill="#f8faf8" />
+  <text x="52" y="31" fill="#0f2b2d" font-family="Avenir Next, Trebuchet MS, sans-serif" font-size="23" font-weight="600" letter-spacing="-.65">asset compass</text>
+</svg>

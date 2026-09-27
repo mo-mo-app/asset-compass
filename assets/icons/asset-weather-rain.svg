@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none" role="img" aria-labelledby="title">
+  <title id="title">Rain</title>
+  <path d="M8.2 18.8h15.3a4.9 4.9 0 0 0 .5-9.8 8 8 0 0 0-15.2-1.4 5.7 5.7 0 0 0-.6 11.2Z" fill="#E9EFF1" stroke="#637F89" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="m10.4 22.2-1.2 2.2m7-2.2-1.2 2.2m7-2.2-1.2 2.2" stroke="#638391" stroke-width="2.2" stroke-linecap="round"/>
+</svg>

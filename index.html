@@ -4,10 +4,13 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Asset Compass | 資産管理</title>
+    <meta name="theme-color" content="#0f2b2d" />
+    <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/assets/apple-touch-icon.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Noto+Sans+JP:wght@400;500;600;700&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="styles.css?v=20260928-1" />
+    <link rel="stylesheet" href="styles.css?v=20260928-3" />
     <link rel="stylesheet" href="funds.css" />
   </head>
   <body>
@@ -18,7 +21,15 @@
         <symbol id="icon-accounts" viewBox="0 0 24 24"><path d="M3.5 20.5h17M5.5 20V6l7-2v16M12.5 20V9l6-2v13"/><path d="M8.5 8.5h1m-1 3h1m-1 3h1m7-3h1m-1 3h1"/></symbol>
       </svg>
       <aside class="sidebar">
-        <div class="brand"><span class="brand-mark">◒</span><span class="brand-name">asset compass</span></div>
+        <div class="brand" aria-label="asset compass">
+          <svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <circle class="brand-ring" cx="12" cy="12" r="7.65" />
+            <path class="brand-needle-mint" d="M12 5.8 16.4 7.6 12.8 12.8Z" />
+            <path class="brand-needle-light" d="M12 18.2 7.6 16.4 11.2 11.2Z" />
+            <circle class="brand-center" cx="12" cy="12" r=".8" />
+          </svg>
+          <span class="brand-name">asset compass</span>
+        </div>
         <nav aria-label="メインメニュー">
           <button class="nav-item active" data-view="dashboard"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-dashboard"/></svg></span>TOP</button>
           <button class="nav-item" data-view="holdings"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-holdings"/></svg></span>保有資産</button>
@@ -26,12 +37,18 @@
         </nav>
         <div class="sidebar-foot">
           <p>価格データ</p><strong>Yahoo Finance</strong>
-          <small>更新は登録銘柄ごとに実行します</small><span class="brand-version">v0.2.2</span>
+          <small>更新は登録銘柄ごとに実行します</small><span class="brand-version">v0.2.5</span>
         </div>
       </aside>
 
       <div class="mobile-brand" aria-label="Asset Compass">
-        <span class="brand-mark">◒</span><span class="mobile-brand-name">asset compass</span>
+        <svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <circle class="brand-ring" cx="12" cy="12" r="7.65" />
+          <path class="brand-needle-mint" d="M12 5.8 16.4 7.6 12.8 12.8Z" />
+          <path class="brand-needle-light" d="M12 18.2 7.6 16.4 11.2 11.2Z" />
+          <circle class="brand-center" cx="12" cy="12" r=".8" />
+        </svg>
+        <span class="mobile-brand-name">asset compass</span>
       </div>
 
       <main>
@@ -56,7 +73,7 @@
         <section id="dashboard-view" class="view active">
           <div class="status-line"><span id="quote-status">登録済みの銘柄はありません</span><span class="dot">•</span><span id="last-fetch-at"></span><span class="dot">•</span><span>すべて日本円換算</span></div>
           <div class="metrics">
-            <article class="metric total"><p class="metric-title"><svg class="metric-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v10M8.5 10h7M8.5 14h7"/></svg><span>総資産評価額</span></p><strong id="total-value"><span class="metric-amount">0</span><span class="metric-unit">円</span></strong><span id="total-cost">取得額 0円</span><svg id="total-value-sparkline" class="metric-sparkline" viewBox="0 0 320 64" preserveAspectRatio="none" aria-hidden="true" hidden><g id="total-value-sparkline-path"></g></svg></article>
+            <article class="metric total"><p class="metric-title"><svg class="metric-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v10M8.5 10h7M8.5 14h7"/></svg><span>総資産評価額</span></p><div class="total-value-row"><strong id="total-value"><span class="metric-amount">0</span><span class="metric-unit">円</span></strong><img id="asset-weather-icon" class="asset-weather-icon" alt="" hidden /></div><span id="total-cost">取得額 0円</span><svg id="total-value-sparkline" class="metric-sparkline" viewBox="0 0 320 64" preserveAspectRatio="none" aria-hidden="true" hidden><g id="total-value-sparkline-path"></g></svg></article>
             <article class="metric"><p class="metric-title"><svg class="metric-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19.5h16M6.5 17V12h3v5M11 17V8h3v9M15.5 17V4.5h3V17"/><path d="m5.5 9 4-3 3 1 5-4"/></svg><span>評価損益</span></p><strong id="total-gain"><span class="metric-amount">0</span><span class="metric-unit">円</span></strong><span id="total-gain-rate">—</span></article>
             <article class="metric"><p class="metric-title"><svg class="metric-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19.5h16M5.5 16l4-4 3 2 6-7"/><path d="M14.5 7H19v4.5"/></svg><span>前日比</span></p><strong id="day-gain"><span class="metric-amount">0</span><span class="metric-unit">円</span></strong><span id="day-gain-rate">—</span></article>
           </div>
@@ -180,6 +197,6 @@
 
     <dialog id="account-dialog"><form id="account-form" method="dialog" class="dialog-card small-dialog"><div class="dialog-heading"><div><p class="eyebrow" id="account-form-kicker">NEW ACCOUNT</p><h2 id="account-dialog-title">証券口座を追加</h2></div><button type="button" class="close" data-close="account-dialog">×</button></div><input type="hidden" id="account-id" /><label>口座名<input id="account-name" placeholder="例：SBI証券" required /></label><label>メモ（任意）<input id="account-note" placeholder="例：NISA / 特定口座" /></label><div class="dialog-actions"><button type="button" class="button ghost" data-close="account-dialog">キャンセル</button><button class="button primary" value="default">保存する</button></div></form></dialog>
     <script src="symbols.js?v=20260927-1"></script>
-    <script src="app.js?v=20260928-1"></script>
+    <script src="app.js?v=20260928-2"></script>
   </body>
 </html>

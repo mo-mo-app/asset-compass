@@ -59,6 +59,24 @@ test("allocation donut omits the repeated total while retaining legend amounts a
   }
 });
 
+test("asset weather uses seven centralized day-rate thresholds and hides invalid rates", () => {
+  const { context, element } = appContext();
+  for (const [rate, expected] of [
+    [5, "special"], [4.99, "very-sunny"], [3, "very-sunny"], [2.99, "sunny"],
+    [0.5, "sunny"], [0.49, "partly-cloudy"], [-0.5, "partly-cloudy"],
+    [-0.51, "cloud"], [-2.99, "cloud"], [-3, "rain"], [-5, "rain"], [-5.01, "storm"]
+  ]) assert.equal(context.getAssetWeatherState(rate), expected, `${rate}% maps to ${expected}`);
+  for (const rate of [null, undefined, NaN, Infinity, "5"]) assert.equal(context.getAssetWeatherState(rate), null);
+
+  context.renderAssetWeatherIcon(3.5);
+  assert.equal(element("#asset-weather-icon").src, "/assets/icons/asset-weather-very-sunny.svg");
+  assert.equal(element("#asset-weather-icon").alt, "資産天気: 強い晴れ");
+  assert.equal(element("#asset-weather-icon").hidden, false);
+  context.renderAssetWeatherIcon(null);
+  assert.equal(element("#asset-weather-icon").hidden, true);
+  assert.equal(element("#asset-weather-icon").alt, "");
+});
+
 test("trend renders incomplete values and does not connect across null snapshots", () => {
   const { context, element } = appContext();
   context.renderAssetTrend({ to: "2026-09-26", snapshots: [
