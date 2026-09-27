@@ -12,12 +12,17 @@
   </head>
   <body>
     <div class="app-shell">
+      <svg class="icon-library" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">
+        <symbol id="icon-dashboard" viewBox="0 0 24 24"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z"/></symbol>
+        <symbol id="icon-holdings" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="5" cy="6" r=".8"/><circle cx="5" cy="12" r=".8"/><circle cx="5" cy="18" r=".8"/></symbol>
+        <symbol id="icon-accounts" viewBox="0 0 24 24"><path d="M3.5 20.5h17M5.5 20V6l7-2v16M12.5 20V9l6-2v13"/><path d="M8.5 8.5h1m-1 3h1m-1 3h1m7-3h1m-1 3h1"/></symbol>
+      </svg>
       <aside class="sidebar">
         <div class="brand"><span class="brand-mark">◒</span><span class="brand-name">asset compass</span></div>
         <nav aria-label="メインメニュー">
-          <button class="nav-item active" data-view="dashboard"><span>◫</span>TOP</button>
-          <button class="nav-item" data-view="holdings"><span>▤</span>保有資産</button>
-          <button class="nav-item" data-view="accounts"><span>◌</span>証券口座</button>
+          <button class="nav-item active" data-view="dashboard"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-dashboard"/></svg></span>TOP</button>
+          <button class="nav-item" data-view="holdings"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-holdings"/></svg></span>保有資産</button>
+          <button class="nav-item" data-view="accounts"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-accounts"/></svg></span>証券口座</button>
         </nav>
         <div class="sidebar-foot">
           <p>価格データ</p><strong>Yahoo Finance</strong>
@@ -34,10 +39,9 @@
           <div><p class="eyebrow" id="today"></p><h1 id="page-title">資産の全体像</h1></div>
           <div class="refresh-controls" aria-label="更新情報">
             <div class="update-info-primary">
-              <div class="fx-info" aria-live="polite"><span id="usd-jpy-rate" class="usd-jpy-rate">USD/JPY —</span></div>
+              <div class="fx-info" aria-live="polite"><span id="usd-jpy-rate" class="usd-jpy-rate">USD/JPY —</span><small id="usd-jpy-timestamp" class="usd-jpy-timestamp"></small></div>
               <button id="refresh-all" class="button primary">↻ <span>価格を更新</span></button>
             </div>
-            <div class="update-info-meta"><small id="usd-jpy-timestamp" class="usd-jpy-timestamp"></small><small id="last-fetch-at" class="last-fetch-at"></small></div>
           </div>
         </header>
 
@@ -50,15 +54,15 @@
         </div>
 
         <section id="dashboard-view" class="view active">
-          <div class="status-line"><span id="quote-status">登録済みの銘柄はありません</span><span class="dot">•</span><span>すべて日本円換算</span></div>
+          <div class="status-line"><span id="quote-status">登録済みの銘柄はありません</span><span class="dot">•</span><span id="last-fetch-at"></span><span class="dot">•</span><span>すべて日本円換算</span></div>
           <div class="metrics">
-            <article class="metric total"><p>総資産評価額</p><strong id="total-value">¥0</strong><span id="total-cost">取得額 ¥0</span></article>
-            <article class="metric"><p>評価損益</p><strong id="total-gain">¥0</strong><span id="total-gain-rate">—</span></article>
-            <article class="metric"><p>本日の変動</p><strong id="day-gain">¥0</strong><span id="day-gain-rate">—</span></article>
+            <article class="metric total"><p class="metric-title"><svg class="metric-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v10M8.5 10h7M8.5 14h7"/></svg><span>総資産評価額</span></p><strong id="total-value"><span class="metric-amount">0</span><span class="metric-unit">円</span></strong><span id="total-cost">取得額 0円</span><svg id="total-value-sparkline" class="metric-sparkline" viewBox="0 0 320 64" preserveAspectRatio="none" aria-hidden="true" hidden><g id="total-value-sparkline-path"></g></svg></article>
+            <article class="metric"><p class="metric-title"><svg class="metric-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19.5h16M6.5 17V12h3v5M11 17V8h3v9M15.5 17V4.5h3V17"/><path d="m5.5 9 4-3 3 1 5-4"/></svg><span>評価損益</span></p><strong id="total-gain"><span class="metric-amount">0</span><span class="metric-unit">円</span></strong><span id="total-gain-rate">—</span></article>
+            <article class="metric"><p class="metric-title"><svg class="metric-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19.5h16M5.5 16l4-4 3 2 6-7"/><path d="M14.5 7H19v4.5"/></svg><span>前日比</span></p><strong id="day-gain"><span class="metric-amount">0</span><span class="metric-unit">円</span></strong><span id="day-gain-rate">—</span></article>
           </div>
           <div class="grid-two">
-            <section class="panel"><div class="panel-heading"><div><p class="eyebrow">ALLOCATION</p><h2>資産配分</h2></div><span id="asset-count" class="muted"></span></div><div id="allocation" class="allocation empty-state">保有資産を追加すると配分を表示します</div></section>
-            <section class="panel"><div class="panel-heading"><div><p class="eyebrow">ACCOUNTS</p><h2>口座別サマリー</h2></div><button class="text-button" data-go="accounts">編集</button></div><div id="account-summary" class="account-summary empty-state">証券口座を追加してください</div></section>
+            <section class="panel"><div class="panel-heading"><div><p class="eyebrow">ALLOCATION</p><h2 class="dashboard-section-title"><svg class="dashboard-section-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M11.5 3.5a8.5 8.5 0 1 0 9 9h-9z"/><path d="M14.5 3.8a8.5 8.5 0 0 1 5.7 5.7h-5.7z"/></svg><span>資産配分</span></h2></div><span id="asset-count" class="muted"></span></div><div id="allocation" class="allocation empty-state">保有資産を追加すると配分を表示します</div></section>
+            <section class="panel"><div class="panel-heading"><div><p class="eyebrow">ACCOUNTS</p><h2 class="dashboard-section-title"><svg class="dashboard-section-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-accounts"/></svg><span>口座別サマリー</span></h2></div><button class="text-button dashboard-accounts-edit" data-go="accounts">編集 &gt;</button></div><div id="account-summary" class="account-summary empty-state">証券口座を追加してください</div></section>
           </div>
           <div class="dashboard-insight-grid">
             <section class="panel asset-trend-panel" aria-labelledby="asset-trend-title">
@@ -82,7 +86,7 @@
             </section>
             <section class="panel asset-heatmap-panel" aria-labelledby="asset-heatmap-title">
             <div class="panel-heading asset-heatmap-heading">
-              <div><p class="eyebrow">ASSET HEATMAP</p><h2 id="asset-heatmap-title">資産ヒートマップ</h2></div>
+              <div><p class="eyebrow">ASSET HEATMAP</p><h2 id="asset-heatmap-title" class="dashboard-section-title"><svg class="dashboard-section-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-dashboard"/></svg><span>資産ヒートマップ</span></h2></div>
               <button class="text-button asset-heatmap-details" type="button" data-heatmap-details aria-label="資産ヒートマップの詳細を見る">詳細を見る &gt;</button>
             </div>
             <div id="asset-heatmap" class="asset-heatmap" aria-live="polite">
@@ -90,7 +94,7 @@
             </div>
             </section>
           </div>
-          <section class="panel"><div class="panel-heading"><div><p class="eyebrow">HOLDINGS</p><h2>保有資産</h2></div><button class="text-button" data-go="holdings">すべて見る →</button></div><div id="dashboard-holdings"></div></section>
+          <section class="panel"><div class="panel-heading"><div><p class="eyebrow">HOLDINGS</p><h2 class="dashboard-section-title"><svg class="dashboard-section-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-holdings"/></svg><span>保有資産</span></h2></div><button class="text-button dashboard-holdings-details" type="button" data-go="holdings">詳細を見る &gt;</button></div><div id="dashboard-holdings"></div></section>
         </section>
 
         <section id="holdings-view" class="view">
@@ -117,9 +121,9 @@
       </main>
 
       <nav class="mobile-bottom-nav" aria-label="スマートフォン用メインメニュー">
-        <button class="nav-item active" data-view="dashboard"><span aria-hidden="true">◫</span>TOP</button>
-        <button class="nav-item" data-view="holdings"><span aria-hidden="true">▤</span>保有資産</button>
-        <button class="nav-item" data-view="accounts"><span aria-hidden="true">◌</span>証券口座</button>
+        <button class="nav-item active" data-view="dashboard"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-dashboard"/></svg></span>TOP</button>
+        <button class="nav-item" data-view="holdings"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-holdings"/></svg></span>保有資産</button>
+        <button class="nav-item" data-view="accounts"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-accounts"/></svg></span>証券口座</button>
       </nav>
     </div>
 

@@ -1,7 +1,13 @@
 const KEY = "asset-compass-v1";
 const LOCAL_BACKUP_KEY = "asset-compass-v1-pre-sync-backup";
 const { normalizeStoredSymbol, displaySymbol, sameHoldingSlot } = AssetCompassSymbols;
-const yen = new Intl.NumberFormat("ja-JP", { style: "currency", currency: "JPY", maximumFractionDigits: 0 });
+const jpyNumber = new Intl.NumberFormat("ja-JP", { maximumFractionDigits: 0 });
+const formatJpyAmount = amount => Number.isFinite(amount) ? `${jpyNumber.format(amount)}円` : "—";
+const formatMetricJpyAmount = (amount, withSign = false) => {
+  if (!Number.isFinite(amount)) return "—";
+  const sign = withSign ? amount > 0 ? "+" : amount < 0 ? "-" : "" : "";
+  return `${sign}<span class="metric-amount">${jpyNumber.format(Math.abs(amount))}</span><span class="metric-unit">円</span>`;
+};
 const number = new Intl.NumberFormat("ja-JP", { maximumFractionDigits: 2 });
 function generateId() {
   const cryptoApi = window.crypto;
@@ -162,11 +168,17 @@ async function migrateLocalData() {
 // 国内投信の基準価額は、通常「1万口あたり」。保有口数は実口数で入力する。
 const quantityDivisor = (h) => h.type === "投資信託" ? 10000 : 1;
 const hasQuote = (h) => Number.isFinite(h.price);
+const formatHoldingPrice = h => {
+  const amount = number.format(h.price);
+  if (h.currency === "JPY") return `${amount}円`;
+  if (h.currency === "USD") return `${amount}ドル`;
+  return `${amount} ${escapeHTML(h.currency)}`;
+};
 const hasValuation = (h) => hasQuote(h) && (h.currency !== "USD" || Number.isFinite(fxRate));
 const valueOf = (h) => hasValuation(h) ? h.price * h.quantity / quantityDivisor(h) * (h.currency === "USD" ? fxRate : 1) : null;
 const costOf = (h) => h.currency === "USD" && !Number.isFinite(fxRate) ? null : h.cost * h.quantity / quantityDivisor(h) * (h.currency === "USD" ? fxRate : 1);
 const gainClass = (n) => n > 0 ? "positive" : n < 0 ? "negative" : "";
-const signed = (n) => `${n > 0 ? "+" : n < 0 ? "−" : ""}${yen.format(Math.abs(n))}`;
+const signed = n => Number.isFinite(n) ? `${n > 0 ? "+" : n < 0 ? "-" : ""}${formatJpyAmount(Math.abs(n))}` : "—";
 const account = (id) => data.accounts.find(a => a.id === id);
 
 // Local-currency daily change. null means unknown/unusable; 0 means unchanged.
@@ -188,13 +200,13 @@ function render() {
   const gain = total - cost;
   const canCompareDay = holdings.length > 0 && valued.length === holdings.length && holdings.every(h => dailyChangePercent(h) !== null);
   const day = canCompareDay ? valued.reduce((n,h) => n + (h.price - h.previousClose) * h.quantity / quantityDivisor(h) * (h.currency === "USD" ? fxRate : 1), 0) : null;
-  $("#total-value").textContent = valued.length ? yen.format(total) : "—";
-  $("#total-cost").textContent = valued.length ? `取得額 ${yen.format(cost)}${missingQuotes ? `（未取得 ${missingQuotes}件を除く）` : ""}` : holdings.some(h => hasQuote(h) && h.currency === "USD") ? "為替レート取得後に表示" : "価格を更新してください";
-  $("#total-gain").textContent = valued.length ? signed(gain) : "—";
+  $("#total-value").innerHTML = valued.length ? formatMetricJpyAmount(total) : "—";
+  $("#total-cost").textContent = valued.length ? `取得額 ${formatJpyAmount(cost)}${missingQuotes ? `（未取得 ${missingQuotes}件を除く）` : ""}` : holdings.some(h => hasQuote(h) && h.currency === "USD") ? "為替レート取得後に表示" : "価格を更新してください";
+  $("#total-gain").innerHTML = valued.length ? formatMetricJpyAmount(gain, true) : "—";
   $("#total-gain").className = gainClass(gain);
   $("#total-gain-rate").textContent = cost ? `${(gain / cost * 100).toFixed(2)}%` : "—";
   $("#total-gain-rate").className = gainClass(gain);
-  $("#day-gain").textContent = day !== null ? signed(day) : "—";
+  $("#day-gain").innerHTML = day !== null ? formatMetricJpyAmount(day, true) : "—";
   $("#day-gain").className = gainClass(day);
   $("#day-gain-rate").textContent = day !== null && total - day > 0 ? `${(day / (total - day) * 100).toFixed(2)}%` : "—";
   $("#day-gain-rate").className = gainClass(day);
@@ -226,14 +238,22 @@ function renderAllocation(total) {
   }).join(", ");
   const details = types.map(([type, value], index) => {
     const percentage = value / total * 100;
-    return `<li class="allocation-legend-row"><span class="allocation-legend-name"><i style="--allocation-color:${colors[index]}"></i>${type}</span><span class="allocation-legend-values"><b>${percentage.toFixed(1)}%</b><small>${yen.format(value)}</small></span></li>`;
+    return `<li class="allocation-legend-row"><span class="allocation-legend-name"><i style="--allocation-color:${colors[index]}"></i>${type}</span><span class="allocation-legend-values"><b>${percentage.toFixed(1)}%</b><small>${formatJpyAmount(value)}</small></span></li>`;
   }).join("");
   $("#allocation").innerHTML = `<div class="allocation-chart-layout"><div class="allocation-donut" role="img" aria-label="資産配分 ${types.map(([type, value]) => `${type} ${(value / total * 100).toFixed(1)}%`).join("、")}" style="--allocation-chart:conic-gradient(${segments})"><div class="allocation-donut-center"><small>構成比</small></div></div><ul class="allocation-legend">${details}</ul></div>`;
 }
 function renderAccountSummary() {
-  const rows = data.accounts.map(a => { const hs=data.holdings.filter(h=>h.accountId===a.id), valued=hs.filter(hasValuation); return `<div class="account-summary-row"><span>${escapeHTML(a.name)}</span><b>${valued.length ? yen.format(valued.reduce((n,h) => n + valueOf(h),0)) : "—"}</b></div>`; }).join("");
+  const rows = data.accounts.map(a => {
+    const valued = data.holdings.filter(h => h.accountId === a.id && hasValuation(h));
+    const value = valued.reduce((sum, h) => sum + valueOf(h), 0);
+    const cost = valued.reduce((sum, h) => sum + costOf(h), 0);
+    const gain = valued.length ? value - cost : null;
+    const rate = gain !== null && cost > 0 ? gain / cost * 100 : null;
+    return `<div class="account-summary-row"><span class="account-summary-name">${escapeHTML(a.name)}</span><b class="account-summary-value">${valued.length ? formatJpyAmount(value) : "—"}</b><span class="account-summary-gain ${gainClass(gain || 0)}">${gain !== null ? signed(gain) : "—"}</span><span class="account-summary-rate">${renderHoldingRateBadge(rate)}</span></div>`;
+  }).join("");
   $("#account-summary").className = rows ? "account-summary" : "account-summary empty-state";
-  $("#account-summary").innerHTML = rows || "証券口座を追加してください";
+  const header = `<div class="account-summary-header"><span>口座名</span><span>評価額</span><span class="account-summary-gain-heading">評価損益</span><span>評価損益率</span></div>`;
+  $("#account-summary").innerHTML = rows ? header + rows : "証券口座を追加してください";
 }
 function groupHeatmapHoldings(holdings) {
   const groups = new Map();
@@ -287,7 +307,7 @@ function renderHeatmapTiles(groups, { fullTypes = false } = {}) {
     const kind = fullTypes ? holding.type : holding.type === "投資信託" ? "投信" : holding.type;
     const name = `${holding.name || symbol}（${symbol}）`;
     const changeLabel = group.changePercent === null ? "本日の騰落率は不明" : `本日の騰落率 ${change}`;
-    return `<article class="heatmap-tile" role="group" aria-label="${escapeHTML(name)}・${yen.format(group.valueJpy)}・${changeLabel}" data-movement="${heatmapMovementClass(group.changePercent)}" title="${escapeHTML(name)}・${yen.format(group.valueJpy)}・${changeLabel}"><span class="heatmap-symbol">${escapeHTML(label)}</span><strong class="heatmap-change">${change}</strong><small class="heatmap-type">${escapeHTML(kind)}</small></article>`;
+    return `<article class="heatmap-tile" role="group" aria-label="${escapeHTML(name)}・${formatJpyAmount(group.valueJpy)}・${changeLabel}" data-movement="${heatmapMovementClass(group.changePercent)}" title="${escapeHTML(name)}・${formatJpyAmount(group.valueJpy)}・${changeLabel}"><span class="heatmap-symbol">${escapeHTML(label)}</span><strong class="heatmap-change">${change}</strong><small class="heatmap-type">${escapeHTML(kind)}</small></article>`;
   }).join("");
 }
 
@@ -369,7 +389,7 @@ function renderHeatmapTreemap(groups) {
     const kind = holding.type;
     const changeLabel = rectangle.group.changePercent === null ? "本日の騰落率は不明" : `本日の騰落率 ${change}`;
     const position = `left:${rectangle.x / aspectRatio * 100}%;top:${rectangle.y * 100}%;width:${rectangle.width / aspectRatio * 100}%;height:${rectangle.height * 100}%`;
-    return `<article class="heatmap-treemap-tile" role="group" aria-label="${escapeHTML(name)}・${yen.format(rectangle.group.valueJpy)}・${changeLabel}" data-movement="${heatmapMovementClass(rectangle.group.changePercent)}" data-label-density="${labelDensity}" data-asset-type="${isFund ? "fund" : "stock"}" style="${position}" title="${escapeHTML(name)}・${yen.format(rectangle.group.valueJpy)}・${changeLabel}"><span class="heatmap-treemap-symbol${isFund ? " heatmap-treemap-fund-name" : ""}">${escapeHTML(primaryLabel)}</span><strong class="heatmap-treemap-change">${change}</strong><small class="heatmap-treemap-type">${escapeHTML(kind)}</small></article>`;
+    return `<article class="heatmap-treemap-tile" role="group" aria-label="${escapeHTML(name)}・${formatJpyAmount(rectangle.group.valueJpy)}・${changeLabel}" data-movement="${heatmapMovementClass(rectangle.group.changePercent)}" data-label-density="${labelDensity}" data-asset-type="${isFund ? "fund" : "stock"}" style="${position}" title="${escapeHTML(name)}・${formatJpyAmount(rectangle.group.valueJpy)}・${changeLabel}"><span class="heatmap-treemap-symbol${isFund ? " heatmap-treemap-fund-name" : ""}">${escapeHTML(primaryLabel)}</span><strong class="heatmap-treemap-change">${change}</strong><small class="heatmap-treemap-type">${escapeHTML(kind)}</small></article>`;
   }).join("");
   return `<div class="heatmap-treemap-canvas" style="--treemap-aspect:${aspectRatio}">${tiles}</div>`;
 }
@@ -436,7 +456,7 @@ function holdingRow(h, compact = false) {
   const marketDate = h.type === "投資信託" ? formatFundDate(h.priceDate) : formatDateTime(h.priceTimestamp);
   const marketLabel = h.type === "投資信託" ? "基準日" : "価格日時";
   const quantityLabel = h.type === "投資信託" ? "保有口数" : "保有数量";
-  return `<div class="holding-row"><div class="holding-identity"><div class="holding-name">${escapeHTML(h.name)}</div><div class="holding-meta">${renderHoldingMeta(h)}</div>${marketDate ? `<div class="holding-updated">${marketLabel} ${marketDate}</div>` : ""}</div><div class="holding-cell optional holding-current"><small>現在値</small><span class="money">${hasQuote(h) ? number.format(h.price) + " " + h.currency : "未取得"}</span></div><div class="holding-cell holding-pc-quantity"><small>保有数</small><span class="money">${formatHoldingQuantity(h)}</span></div><div class="holding-cell holding-value ${compact ? 'hide-mobile' : ''}"><small>評価額</small><span class="money">${value !== null ? yen.format(value) : "—"}</span></div><div class="holding-cell optional holding-gain" data-known="${gain !== null}"><small>評価損益</small><span class="gain ${gainClass(gain || 0)}">${gain !== null ? signed(gain) : "—"}</span></div><div class="holding-cell optional holding-rate"><small>評価損益率</small>${renderHoldingRateBadge(rate)}</div><div class="holding-cell holding-type ${compact ? 'hide-mobile' : ''}"><small>資産区分</small><span>${h.type}</span></div><button class="icon-button holding-menu" data-edit-holding="${h.id}" aria-label="編集">⋮</button><div class="holding-cell holding-quantity"><small>${quantityLabel}</small><span>${number.format(h.quantity)}</span></div></div>`;
+  return `<div class="holding-row"><div class="holding-identity"><div class="holding-name">${escapeHTML(h.name)}</div><div class="holding-meta">${renderHoldingMeta(h)}</div>${marketDate ? `<div class="holding-updated">${marketLabel} ${marketDate}</div>` : ""}</div><div class="holding-cell optional holding-current"><small>現在値</small><span class="money">${hasQuote(h) ? formatHoldingPrice(h) : "未取得"}</span></div><div class="holding-cell holding-pc-quantity"><small>保有数</small><span class="money">${formatHoldingQuantity(h)}</span></div><div class="holding-cell holding-value ${compact ? 'hide-mobile' : ''}"><small>評価額</small><span class="money">${value !== null ? formatJpyAmount(value) : "—"}</span></div><div class="holding-cell optional holding-gain" data-known="${gain !== null}"><small>評価損益</small><span class="gain ${gainClass(gain || 0)}">${gain !== null ? signed(gain) : "—"}</span></div><div class="holding-cell optional holding-rate"><small>評価損益率</small>${renderHoldingRateBadge(rate)}</div><div class="holding-cell holding-type ${compact ? 'hide-mobile' : ''}"><small>資産区分</small><span>${h.type}</span></div><button class="icon-button holding-menu" data-edit-holding="${h.id}" aria-label="編集">⋮</button><div class="holding-cell holding-quantity"><small>${quantityLabel}</small><span>${number.format(h.quantity)}</span></div></div>`;
 }
 function dashboardHoldingRow(h) {
   const value = valueOf(h), cost = costOf(h);
@@ -445,7 +465,7 @@ function dashboardHoldingRow(h) {
   const symbol = displaySymbol(h.type, h.symbol);
   const mobileName = h.type === "投資信託" ? h.name || symbol : symbol || h.name;
   const gainStyle = gainClass(gain || 0);
-  return `<div class="dashboard-holding"><div class="dashboard-holding-identity"><div class="dashboard-holding-name">${escapeHTML(h.name)}</div><div class="dashboard-holding-meta">${renderHoldingMeta(h)}</div></div><div class="dashboard-holding-mobile-name">${escapeHTML(mobileName)}</div><div class="dashboard-holding-current"><small>現在値</small><span>${hasQuote(h) ? `${number.format(h.price)} ${escapeHTML(h.currency)}` : "未取得"}</span></div><div class="dashboard-holding-quantity"><small>保有数</small><span>${formatHoldingQuantity(h)}</span></div><div class="dashboard-holding-value"><small>評価額</small><span>${value !== null ? yen.format(value) : "—"}</span></div><div class="dashboard-holding-gain"><div class="dashboard-holding-gain-amount" data-known="${gain !== null}"><small>評価損益</small><span class="${gainStyle}">${gain !== null ? signed(gain) : "—"}</span></div><div class="dashboard-holding-gain-rate"><small>評価損益率</small>${renderHoldingRateBadge(rate)}</div></div></div>`;
+  return `<div class="dashboard-holding"><div class="dashboard-holding-identity"><div class="dashboard-holding-name">${escapeHTML(h.name)}</div><div class="dashboard-holding-meta">${renderHoldingMeta(h)}</div></div><div class="dashboard-holding-mobile-name">${escapeHTML(mobileName)}</div><div class="dashboard-holding-current"><small>現在値</small><span>${hasQuote(h) ? formatHoldingPrice(h) : "未取得"}</span></div><div class="dashboard-holding-quantity"><small>保有数</small><span>${formatHoldingQuantity(h)}</span></div><div class="dashboard-holding-value"><small>評価額</small><span>${value !== null ? formatJpyAmount(value) : "—"}</span></div><div class="dashboard-holding-gain"><div class="dashboard-holding-gain-amount" data-known="${gain !== null}"><small>評価損益</small><span class="${gainStyle}">${gain !== null ? signed(gain) : "—"}</span></div><div class="dashboard-holding-gain-rate"><small>評価損益率</small>${renderHoldingRateBadge(rate)}</div></div></div>`;
 }
 function renderDashboardHoldings() { $("#dashboard-holdings").innerHTML = data.holdings.length ? `<div class="dashboard-holding-header"><span>銘柄名</span><span>評価損益</span><span>評価損益率</span></div>` + sortHoldingsForList(data.holdings).slice(0,5).map(({ holding }) => dashboardHoldingRow(holding)).join("") : `<div class="empty-state" style="height:100px">まだ保有資産がありません</div>`; }
 function sortHoldingsForList(holdings) {
@@ -551,12 +571,16 @@ function renderAssetTrend(response) {
   const chart = $("#asset-trend-chart");
   const lines = $("#asset-trend-lines");
   const markers = $("#asset-trend-points");
+  const totalSparkline = $("#total-value-sparkline");
+  const totalSparklinePath = $("#total-value-sparkline-path");
+  totalSparkline.hidden = true;
+  totalSparklinePath.replaceChildren();
 
   deltaValue.className = "";
   deltaRate.className = "asset-trend-rate";
   if (previousPoint) {
     const delta = latestPoint.valueJpy - previousPoint.valueJpy;
-    deltaValue.textContent = delta > 0 ? `+${yen.format(delta)}` : delta < 0 ? `-${yen.format(Math.abs(delta))}` : yen.format(0);
+    deltaValue.textContent = signed(delta);
     const changeClass = delta > 0 ? "positive" : delta < 0 ? "negative" : "";
     deltaValue.className = changeClass;
     deltaRate.className = `asset-trend-rate${changeClass ? ` ${changeClass}` : ""}`;
@@ -602,9 +626,14 @@ function renderAssetTrend(response) {
     else if (segment.length) { segments.push(segment); segment = []; }
   }
   if (segment.length) segments.push(segment);
-  lines.innerHTML = segments.filter(points => points.length > 1).map(points =>
-    `<path class="asset-trend-line" d="${points.map((point, index) => `${index ? "L" : "M"}${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(" ")}" />`
-  ).join("");
+  const pathData = segments.filter(points => points.length > 1).map(points =>
+    points.map((point, index) => `${index ? "L" : "M"}${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(" ")
+  );
+  lines.innerHTML = pathData.map(path => `<path class="asset-trend-line" d="${path}" />`).join("");
+  if (pathData.length) {
+    totalSparklinePath.innerHTML = pathData.map(path => `<path class="metric-sparkline-line" d="${path}" />`).join("");
+    totalSparkline.hidden = false;
+  }
   markers.innerHTML = coordinates.filter(Boolean).map(({ point, x, y }) =>
     `<circle class="asset-trend-point" data-date="${point.date}" data-complete="${point.isComplete}" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.5" />`
   ).join("");
@@ -643,7 +672,7 @@ async function loadAssetTrend({ refresh = false } = {}) {
 }
 function formatFundDate(value) { return typeof value === "string" && /^\d{1,2}\/\d{1,2}$/.test(value) ? value : ""; }
 function renderAccounts() {
-  $("#accounts-list").innerHTML = data.accounts.map(a => { const list=data.holdings.filter(h=>h.accountId===a.id), valued=list.filter(hasValuation), value=valued.reduce((n,h)=>n+valueOf(h),0); return `<article class="account-card"><div class="account-card-top"><div><h3>${escapeHTML(a.name)}</h3><p class="account-note">${escapeHTML(a.note || "メモなし")}</p></div><button class="icon-button" data-edit-account="${a.id}">⋮</button></div><p class="account-card-value">${valued.length ? yen.format(value) : "—"}</p><p class="account-card-count">${list.length} 銘柄を保有</p></article>`; }).join("");
+  $("#accounts-list").innerHTML = data.accounts.map(a => { const list=data.holdings.filter(h=>h.accountId===a.id), valued=list.filter(hasValuation), value=valued.reduce((n,h)=>n+valueOf(h),0); return `<article class="account-card"><div class="account-card-top"><div><h3>${escapeHTML(a.name)}</h3><p class="account-note">${escapeHTML(a.note || "メモなし")}</p></div><button class="icon-button" data-edit-account="${a.id}">⋮</button></div><p class="account-card-value">${valued.length ? formatJpyAmount(value) : "—"}</p><p class="account-card-count">${list.length} 銘柄を保有</p></article>`; }).join("");
 }
 function renderAccountOptions() { const current = $("#filter-account").value; $("#filter-account").innerHTML = `<option value="all">すべての口座</option>${data.accounts.map(a=>`<option value="${a.id}">${escapeHTML(a.name)}</option>`).join("")}`; $("#filter-account").value = current; }
 function escapeHTML(s) { const d=document.createElement("div"); d.textContent=s; return d.innerHTML; }
