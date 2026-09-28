@@ -1,0 +1,172 @@
+[
+  {
+    "version": "0.2.6",
+    "date": "2026/09/28",
+    "commits": [
+      {
+        "message": "Add version history views for desktop and mobile",
+        "changes": [
+          "Asset Compassのバージョン履歴機能を追加"
+        ]
+      }
+    ]
+  },
+  {
+    "version": "0.2.5",
+    "date": "2026/09/28",
+    "commits": [
+      {
+        "message": "Add Asset Compass branding and asset weather icons",
+        "changes": [
+          "Asset Compassのオリジナルロゴを追加",
+          "ブラウザ用のfaviconを追加",
+          "iPhoneホーム画面用アイコンを追加",
+          "TOP画面に資産天気アイコンを追加",
+          "アプリ全体のブランディングを強化"
+        ]
+      }
+    ]
+  },
+  {
+    "version": "0.2.4",
+    "date": "2026/09/28",
+    "commits": [
+      {
+        "message": "Add detailed asset trend views and improve chart rendering",
+        "changes": [
+          "資産推移の詳細表示を追加",
+          "資産推移グラフの描画を改善",
+          "期間ごとの資産推移を確認しやすい表示に調整",
+          "PC・スマホそれぞれでグラフ表示を最適化",
+          "チャート周辺の表示・操作性を改善"
+        ]
+      }
+    ]
+  },
+  {
+    "version": "0.2.3",
+    "date": "2026/09/27",
+    "commits": [
+      {
+        "message": "Polish dashboard display and unify visual design",
+        "changes": [
+          "TOP上部の表示を整理",
+          "金額の円表記など、全体の表示品質を改善",
+          "スマホ版の総資産レイアウトを改善",
+          "Finviz風カラーを取り入れ、配色を統一",
+          "アイコン・ナビゲーションのデザインを統一",
+          "口座別サマリーの表示を改善",
+          "日本語・数値などの配置や文字揃えを全体的に調整"
+        ]
+      }
+    ]
+  },
+  {
+    "version": "0.2.2",
+    "date": "2026/09/27",
+    "commits": [
+      {
+        "message": "Refine dashboard layout and Japanese stock symbols",
+        "changes": [
+          "TOP画面のレイアウトを調整・改善",
+          "保有資産詳細の表示を整理",
+          "評価損益率を独立した列として表示",
+          "日本株の銘柄コード・シンボルの扱いを改善",
+          "PC表示を中心に細かなUIを調整"
+        ]
+      },
+      {
+        "message": "Refine holdings layouts across desktop and mobile",
+        "changes": [
+          "PC版の保有資産詳細レイアウトを改善",
+          "スマホ版の保有資産表示を改善",
+          "PC・スマホそれぞれに合わせて表示項目や配置を調整"
+        ]
+      }
+    ]
+  },
+  {
+    "version": "0.2.1",
+    "date": "2026/09/26",
+    "commits": [
+      {
+        "message": "Add account categories and refine portfolio views",
+        "changes": [
+          "保有資産に口座区分を追加",
+          "特定・一般・NISAなどを銘柄ごとに管理できるよう対応",
+          "同じ証券会社・同じ銘柄でも口座区分ごとに分けて登録可能",
+          "PC・スマホのポートフォリオ表示を調整・改善"
+        ]
+      }
+    ]
+  },
+  {
+    "version": "0.2.0",
+    "date": "2026/09/25",
+    "commits": [
+      {
+        "message": "Bump version to v0.2.0",
+        "changes": [
+          "Asset Compassのバージョンをv0.2.0に更新"
+        ]
+      },
+      {
+        "message": "Add SQLite sync for shared portfolio data",
+        "changes": [
+          "SQLiteによるポートフォリオデータの共有・同期機能を追加"
+        ]
+      },
+      {
+        "message": "Rename dashboard label to TOP",
+        "changes": [
+          "ダッシュボードの表示名をTOPに変更"
+        ]
+      },
+      {
+        "message": "Improve mobile asset UI",
+        "changes": [
+          "スマホ版の資産表示・操作UIを改善"
+        ]
+      },
+      {
+        "message": "Add mobile LAN support and responsive holdings",
+        "changes": [
+          "スマホからLAN経由でAsset Compassへアクセスできるよう対応",
+          "保有資産画面をレスポンシブ対応"
+        ]
+      },
+      {
+        "message": "Add price timestamps and fetch status",
+        "changes": [
+          "株価の取得時刻を表示",
+          "株価取得状況の表示を追加"
+        ]
+      },
+      {
+        "message": "Add automatic security name lookup",
+        "changes": [
+          "銘柄名の自動取得機能を追加"
+        ]
+      }
+    ]
+  },
+  {
+    "version": "Initial",
+    "date": "2026/09/24",
+    "commits": [
+      {
+        "message": "Add version display",
+        "changes": [
+          "Asset Compassにバージョン表示を追加"
+        ]
+      },
+      {
+        "message": "Initial commit",
+        "changes": [
+          "Asset Compassの初回コミット",
+          "Gitによるバージョン管理を開始"
+        ]
+      }
+    ]
+  }
+]

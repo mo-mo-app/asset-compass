@@ -34,6 +34,7 @@ let snapshotFetchPromise = null;
 let selectedAssetTrendRange = "1m";
 let selectedTrendDetailRange = "1m";
 let selectedTrendDetailAccountId = "total";
+let versionHistoryEntries = [];
 
 const $ = (s) => document.querySelector(s);
 const cloneData = value => JSON.parse(JSON.stringify(value));
@@ -950,14 +951,98 @@ async function updateAll() {
   } catch { /* persistState restores the last confirmed state and shows the error. */ }
   finally {button.disabled=false;button.innerHTML="↻ <span>価格を更新</span>";}
 }
+function renderVersionHistoryList(container) {
+  container.replaceChildren();
+  if (!versionHistoryEntries.length) {
+    const empty = document.createElement("p");
+    empty.className = "version-history-empty";
+    empty.textContent = "バージョン履歴を読み込めませんでした。";
+    container.append(empty);
+    return;
+  }
+  for (const entry of versionHistoryEntries) {
+    const article = document.createElement("article");
+    article.className = "version-history-entry";
+    const heading = document.createElement("div");
+    heading.className = "version-history-entry-heading";
+    const version = document.createElement("strong");
+    version.className = "version-history-number";
+    version.textContent = entry.version;
+    const date = document.createElement("time");
+    date.dateTime = entry.date.replaceAll("/", "-");
+    date.textContent = entry.date;
+    heading.append(version, date);
+    const commits = document.createElement("div");
+    commits.className = "version-history-commits";
+    for (const commit of entry.commits) {
+      const commitSection = document.createElement("section");
+      commitSection.className = "version-history-commit";
+      const message = document.createElement("h3");
+      message.className = "version-history-commit-title";
+      message.textContent = commit.message;
+      const changes = document.createElement("ul");
+      changes.className = "version-history-changes";
+      for (const change of commit.changes) {
+        const item = document.createElement("li");
+        item.textContent = change;
+        changes.append(item);
+      }
+      commitSection.append(message, changes);
+      commits.append(commitSection);
+    }
+    article.append(heading, commits);
+    container.append(article);
+  }
+}
+
+function renderVersionHistory() {
+  renderVersionHistoryList($("#version-history-dialog-list"));
+  renderVersionHistoryList($("#version-history-mobile-list"));
+  const currentVersion = versionHistoryEntries[0]?.version || "—";
+  const currentVersionLabel = /^\d+(?:\.\d+)+$/.test(currentVersion) ? `v${currentVersion}` : currentVersion;
+  document.querySelectorAll("[data-open-version-history]").forEach(button => {
+    button.textContent = currentVersionLabel;
+    button.setAttribute("aria-label", `バージョン ${currentVersionLabel}、バージョン履歴を開く`);
+    button.title = "バージョン履歴を開く";
+  });
+}
+
+async function loadVersionHistory() {
+  try {
+    const response = await fetch("/assets/version-history.json", { cache: "no-store" });
+    if (!response.ok) throw new Error(`version history fetch failed: ${response.status}`);
+    const entries = await response.json();
+    if (!Array.isArray(entries)) throw new Error("version history must be an array");
+    versionHistoryEntries = entries
+      .filter(entry => entry && typeof entry.version === "string" &&
+        typeof entry.date === "string" && /^\d{4}\/\d{2}\/\d{2}$/.test(entry.date) &&
+        Array.isArray(entry.commits) && entry.commits.every(commit => commit && typeof commit.message === "string" &&
+          Array.isArray(commit.changes) && commit.changes.every(change => typeof change === "string")))
+      .sort((a, b) => b.date.localeCompare(a.date) || b.version.localeCompare(a.version, "ja", { numeric: true }));
+  } catch (error) {
+    console.error("バージョン履歴を読み込めませんでした。", error);
+    versionHistoryEntries = [];
+  }
+  renderVersionHistory();
+}
+
+function openVersionHistory() {
+  if (window.matchMedia("(max-width: 600px)").matches) {
+    showAppView("version-history");
+    return;
+  }
+  const dialog = $("#version-history-dialog");
+  if (!dialog.open) dialog.showModal();
+}
+
 function showAppView(viewName) {
   const view = $(`#${viewName}-view`);
   if (!view) return;
-  const selectedNavView = viewName === "heatmap" || viewName === "trend" ? "dashboard" : viewName;
+  const selectedNavView = ["heatmap", "trend", "version-history"].includes(viewName) ? "dashboard" : viewName;
   document.querySelectorAll(".nav-item").forEach(item => item.classList.toggle("active", item.dataset.view === selectedNavView));
   document.querySelectorAll(".view").forEach(item => item.classList.toggle("active", item === view));
   $("#page-title").textContent = {
-    dashboard: "資産の全体像", holdings: "保有資産", accounts: "証券口座", heatmap: "資産ヒートマップ", trend: "資産推移"
+    dashboard: "資産の全体像", holdings: "保有資産", accounts: "証券口座", heatmap: "資産ヒートマップ", trend: "資産推移", "version-history": "バージョン履歴"
   }[viewName];
   if (viewName === "dashboard" && snapshotResponseCache) renderAssetTrend(snapshotResponseCache);
   if (viewName === "trend") {
@@ -965,7 +1050,7 @@ function showAppView(viewName) {
     if (snapshotResponseCache) renderAssetTrendDetail(snapshotResponseCache);
     else void loadAssetTrend();
   }
-  if (viewName === "heatmap" || viewName === "trend") window.scrollTo(0, 0);
+  if (viewName === "heatmap" || viewName === "trend" || viewName === "version-history") window.scrollTo(0, 0);
 }
 
 function showTrendPointTooltip(point) {
@@ -998,6 +1083,7 @@ document.addEventListener("click", e => {
   }
   const nav=e.target.closest(".nav-item");
   if(nav)showAppView(nav.dataset.view);
+  if(e.target.closest("[data-open-version-history]")) openVersionHistory();
   const heatmapDetails=e.target.closest("[data-heatmap-details]");if(heatmapDetails)showAppView("heatmap");
   const trendDetails=e.target.closest("[data-trend-details]");if(trendDetails)showAppView("trend");
   const go=e.target.closest("[data-go]");if(go)document.querySelector(`[data-view="${go.dataset.go}"]`).click();
@@ -1005,6 +1091,9 @@ document.addEventListener("click", e => {
   const eh=e.target.closest("[data-edit-holding]");if(eh)openHolding(eh.dataset.editHolding);
   const ea=e.target.closest("[data-edit-account]");if(ea)openAccount(ea.dataset.editAccount);
   const close=e.target.closest("[data-close]");if(close)$("#"+close.dataset.close).close();
+});
+$("#version-history-dialog").addEventListener("click", event => {
+  if (event.target === event.currentTarget) event.currentTarget.close();
 });
 const trendDetailChart = $("#trend-detail-chart");
 trendDetailChart.addEventListener("pointerover", event => showTrendPointTooltip(event.target.closest?.(".trend-detail-hit")));
@@ -1067,6 +1156,7 @@ async function boot() {
     location.replace(`http://127.0.0.1:8766/#migration=${encodeURIComponent(encoded)}`);
     return;
   }
+  await loadVersionHistory();
   const migration = new URLSearchParams(location.hash.slice(1)).get("migration");
   if (migration) {
     try {

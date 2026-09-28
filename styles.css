@@ -457,3 +457,35 @@ main > header #refresh-all:hover{background:var(--gain-bg);filter:brightness(.92
   #dashboard-view .account-summary-gain{display:none}
   #dashboard-view .account-summary-gain-heading{display:none}
 }
+
+.brand-version,.mobile-version{border:0;background:transparent;font:9px "DM Mono",monospace;letter-spacing:0;color:#91aaa5;cursor:pointer}
+.brand-version{display:block;text-align:left;margin-top:10px;padding:0}
+.brand-version:hover,.mobile-version:hover{color:#91d4be;text-decoration:underline;text-underline-offset:3px}
+.brand-version:focus-visible,.mobile-version:focus-visible{outline:2px solid #91d4be;outline-offset:3px;border-radius:2px}
+.mobile-version{display:none}
+.version-history-dialog{width:min(590px,calc(100vw - 30px));max-width:none;max-height:calc(100vh - 30px);overflow:visible}
+.version-history-card{display:flex;flex-direction:column;width:100%;max-height:min(760px,82vh);padding:23px;overflow:hidden}
+.version-history-card .dialog-heading{flex:0 0 auto}
+.version-history-list{min-height:0}
+.version-history-dialog .version-history-list{overflow-y:auto;padding-right:6px}
+.version-history-entry{padding:16px 0;border-top:1px solid var(--line)}
+.version-history-entry:first-child{padding-top:0;border-top:0}
+.version-history-entry-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.version-history-entry-heading time{color:var(--muted);font:11px "DM Mono",monospace;white-space:nowrap}
+.version-history-number{color:var(--teal);font:600 13px "DM Mono",monospace}
+.version-history-commits{display:grid;gap:12px}
+.version-history-commit + .version-history-commit{padding-top:11px;border-top:1px dashed var(--line)}
+.version-history-commit-title{margin:8px 0 7px;font-size:12px;font-weight:600;letter-spacing:0;line-height:1.5}
+.version-history-changes{display:grid;gap:4px;margin:0;padding-left:1.2em;color:var(--muted);font-size:12px;line-height:1.6}
+.version-history-empty{padding:20px 0;color:var(--muted);font-size:12px;text-align:center}
+.version-history-panel{padding:7px 22px}
+@media(max-width:600px){
+  .mobile-brand{gap:9px}
+  .mobile-version{display:inline-block;margin-left:auto;padding:8px 2px;font-size:10px}
+  .version-history-panel{padding:7px 16px}
+  .version-history-view .toolbar{align-items:center}
+  .version-history-view .toolbar .button{padding:9px 10px;white-space:nowrap}
+  .version-history-entry{padding:15px 0}
+  .version-history-commit-title{font-size:12px}
+  .version-history-changes{font-size:12px}
+}
