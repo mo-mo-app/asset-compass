@@ -77,6 +77,49 @@ test("asset weather uses seven centralized day-rate thresholds and hides invalid
   assert.equal(element("#asset-weather-icon").alt, "");
 });
 
+test("holding form locks investments only for the iDeCo account category", () => {
+  const { context, element } = appContext();
+  vm.runInContext('data.accounts = [{ id: "account-ideco-name", name: "iDeCo証券", note: "" }]', context);
+  element("#holding-account").value = "account-ideco-name";
+  element("#holding-account-category").value = "specified";
+  element("#holding-type").value = "日本株";
+
+  assert.equal(context.isIdecoCategory("specified"), false);
+  context.updateHoldingFormLabels();
+  assert.equal(element("#holding-type").disabled, false, "brokerage name does not control the asset type");
+  assert.equal(element("#holding-type").value, "日本株");
+
+  element("#holding-account").value = "ordinary-account";
+  element("#holding-account-category").value = "ideco";
+  context.updateHoldingFormLabels();
+  assert.equal(context.isIdecoCategory("ideco"), true);
+  assert.equal(element("#holding-type").disabled, true);
+  assert.equal(element("#holding-type").value, "投資信託");
+  assert.equal(element("#holding-symbol-label").textContent, "投信コード");
+  assert.equal(element("#holding-symbol").placeholder, "例：9I311181");
+});
+
+test("iDeCo acquisition amount calculates the displayed 10,000-unit acquisition cost", () => {
+  const { context, element } = appContext();
+  element("#holding-account-category").value = "ideco";
+  element("#holding-type").value = "投資信託";
+  element("#holding-quantity").value = "163,067";
+  element("#holding-cost").value = "273,948";
+  context.updateHoldingFormLabels();
+
+  assert.equal(element("#cost-label").textContent, "取得金額（円）");
+  assert.equal(element("#holding-cost").placeholder, "例：273948");
+  assert.equal(context.calculateIdecoAcquisitionUnitCost(163067, 273948), 273948 / 163067 * 10000);
+  assert.equal(element("#holding-cost-calculated").textContent, "取得単価（自動計算）：16,799.72円");
+  assert.equal(element("#holding-cost-calculated").hidden, false);
+  assert.equal(context.formatHoldingNumericInput("273948"), "273,948");
+
+  element("#holding-quantity").value = "";
+  context.refreshIdecoAcquisitionUnitPreview();
+  assert.equal(element("#holding-cost-calculated").textContent, "取得単価（自動計算）：—");
+  assert.doesNotMatch(element("#holding-cost-calculated").textContent, /NaN/);
+});
+
 test("trend renders incomplete values and does not connect across null snapshots", () => {
   const { context, element } = appContext();
   context.renderAssetTrend({ to: "2026-09-26", snapshots: [

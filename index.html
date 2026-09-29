@@ -10,7 +10,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Noto+Sans+JP:wght@400;500;600;700&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="styles.css?v=20260928-4" />
+    <link rel="stylesheet" href="styles.css?v=20260929-3" />
     <link rel="stylesheet" href="funds.css" />
   </head>
   <body>
@@ -19,6 +19,7 @@
         <symbol id="icon-dashboard" viewBox="0 0 24 24"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z"/></symbol>
         <symbol id="icon-holdings" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="5" cy="6" r=".8"/><circle cx="5" cy="12" r=".8"/><circle cx="5" cy="18" r=".8"/></symbol>
         <symbol id="icon-accounts" viewBox="0 0 24 24"><path d="M3.5 20.5h17M5.5 20V6l7-2v16M12.5 20V9l6-2v13"/><path d="M8.5 8.5h1m-1 3h1m-1 3h1m7-3h1m-1 3h1"/></symbol>
+        <symbol id="icon-goal" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r=".8"/></symbol>
       </svg>
       <aside class="sidebar">
         <div class="brand" aria-label="asset compass">
@@ -34,6 +35,7 @@
           <button class="nav-item active" data-view="dashboard"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-dashboard"/></svg></span>TOP</button>
           <button class="nav-item" data-view="holdings"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-holdings"/></svg></span>保有資産</button>
           <button class="nav-item" data-view="accounts"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-accounts"/></svg></span>証券口座</button>
+          <button class="nav-item" data-view="goal"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-goal"/></svg></span>目標</button>
         </nav>
         <div class="sidebar-foot">
           <p>価格データ</p><strong>Yahoo Finance</strong>
@@ -72,7 +74,10 @@
         </div>
 
         <section id="dashboard-view" class="view active">
-          <div class="status-line"><span id="quote-status">登録済みの銘柄はありません</span><span class="dot">•</span><span id="last-fetch-at"></span><span class="dot">•</span><span>すべて日本円換算</span></div>
+          <div class="dashboard-status-row">
+            <div class="status-line"><span id="quote-status">登録済みの銘柄はありません</span><span class="dot">•</span><span id="last-fetch-at"></span><span class="dot">•</span><span>すべて日本円換算</span></div>
+            <div id="market-weather" class="market-weather" aria-label="市況"></div>
+          </div>
           <div class="metrics">
             <article class="metric total"><p class="metric-title"><svg class="metric-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v10M8.5 10h7M8.5 14h7"/></svg><span>総資産評価額</span></p><div class="total-value-row"><strong id="total-value"><span class="metric-amount">0</span><span class="metric-unit">円</span></strong><img id="asset-weather-icon" class="asset-weather-icon" alt="" hidden /></div><span id="total-cost">取得額 0円</span><svg id="total-value-sparkline" class="metric-sparkline" viewBox="0 0 320 64" preserveAspectRatio="none" aria-hidden="true" hidden><g id="total-value-sparkline-path"></g></svg></article>
             <article class="metric"><p class="metric-title"><svg class="metric-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19.5h16M6.5 17V12h3v5M11 17V8h3v9M15.5 17V4.5h3V17"/><path d="m5.5 9 4-3 3 1 5-4"/></svg><span>評価損益</span></p><strong id="total-gain"><span class="metric-amount">0</span><span class="metric-unit">円</span></strong><span id="total-gain-rate">—</span></article>
@@ -80,7 +85,7 @@
           </div>
           <div class="grid-two">
             <section class="panel"><div class="panel-heading"><div><p class="eyebrow">ALLOCATION</p><h2 class="dashboard-section-title"><svg class="dashboard-section-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M11.5 3.5a8.5 8.5 0 1 0 9 9h-9z"/><path d="M14.5 3.8a8.5 8.5 0 0 1 5.7 5.7h-5.7z"/></svg><span>資産配分</span></h2></div><span id="asset-count" class="muted"></span></div><div id="allocation" class="allocation empty-state">保有資産を追加すると配分を表示します</div></section>
-            <section class="panel"><div class="panel-heading"><div><p class="eyebrow">ACCOUNTS</p><h2 class="dashboard-section-title"><svg class="dashboard-section-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-accounts"/></svg><span>口座別サマリー</span></h2></div><button class="text-button dashboard-accounts-edit" data-go="accounts">編集 &gt;</button></div><div id="account-summary" class="account-summary empty-state">証券口座を追加してください</div></section>
+            <section class="panel"><div class="panel-heading"><div><p class="eyebrow">ACCOUNTS</p><h2 class="dashboard-section-title"><svg class="dashboard-section-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-accounts"/></svg><span>口座別サマリー</span></h2></div><button class="text-button dashboard-accounts-edit" data-go="accounts">編集する &gt;</button></div><div id="account-summary" class="account-summary empty-state">証券口座を追加してください</div></section>
           </div>
           <div class="dashboard-insight-grid">
             <section class="panel asset-trend-panel" aria-labelledby="asset-trend-title">
@@ -124,14 +129,74 @@
         </section>
 
         <section id="holdings-view" class="view">
-          <div class="toolbar"><div class="filters"><select id="filter-account"><option value="all">すべての口座</option></select><select id="filter-type"><option value="all">すべての資産</option><option value="日本株">日本株</option><option value="米国株">米国株</option><option value="投資信託">投資信託</option></select></div><button class="button primary" id="add-holding">＋ 保有資産を追加</button></div>
+          <div class="toolbar"><div class="filters"><select id="filter-account"><option value="all">すべての口座</option></select><select id="filter-type"><option value="all">すべての資産</option><option value="日本株">日本株</option><option value="米国株">米国株</option><option value="投資信託">投資信託</option></select></div><div class="view-toolbar-actions"><button class="button primary" id="add-holding">＋ 保有資産を追加</button><button class="button ghost" type="button" data-go="dashboard">← TOPへ戻る</button></div></div>
           <section class="panel table-panel"><div id="holdings-table"></div></section>
-          <p class="hint">ヒント：日本株は <code>7203</code>、米国株は <code>AAPL</code>、投資信託は <code>03311187</code> のような8桁の投信コードを入力します。</p>
+          <p class="hint">ヒント：日本株は <code>7203</code>、米国株は <code>AAPL</code>、投資信託は <code>9I311181</code> のような半角英数字8文字の投信コードを入力します。</p>
         </section>
 
         <section id="accounts-view" class="view">
-          <div class="toolbar"><div><p class="eyebrow">YOUR BROKERAGES</p><h2>証券口座</h2></div><button class="button primary" id="add-account">＋ 口座を追加</button></div>
+          <div class="toolbar"><div><p class="eyebrow">YOUR BROKERAGES</p><h2>証券口座</h2></div><div class="view-toolbar-actions"><button class="button primary" id="add-account">＋ 口座を追加</button><button class="button ghost" type="button" data-go="dashboard">← TOPへ戻る</button></div></div>
           <div id="accounts-list" class="account-cards"></div>
+        </section>
+
+        <section id="goal-view" class="view goal-view">
+          <div class="toolbar goal-toolbar">
+            <div><p class="eyebrow">ASSET GOAL</p><h2>資産目標シミュレーション</h2><p class="goal-intro">現在の資産・積立額・想定年利から、目標資産への到達時期をシミュレーションします。</p></div>
+            <button class="button ghost" type="button" data-go="dashboard">← TOPへ戻る</button>
+          </div>
+          <form id="asset-goal-form" class="panel goal-input-panel" novalidate>
+            <h3>シミュレーション条件</h3>
+            <div class="goal-input-grid">
+              <label class="goal-field"><span>現在資産</span><span class="goal-input-wrap"><input id="goal-current-assets" type="text" inputmode="decimal" autocomplete="off" aria-describedby="goal-current-help" /><span>円</span></span><small id="goal-current-help">現在の総資産を使用</small></label>
+              <label class="goal-field"><span>目標資産</span><span class="goal-input-wrap"><input id="goal-target-assets" type="text" inputmode="decimal" autocomplete="off" value="100,000,000" /><span>円</span></span></label>
+              <label class="goal-field"><span>毎月の積立額</span><span class="goal-input-wrap"><input id="goal-monthly-contribution" type="text" inputmode="decimal" autocomplete="off" value="0" /><span>円 / 月</span></span></label>
+              <div class="goal-field"><label for="goal-annual-return">想定年利</label><span class="goal-input-wrap"><input id="goal-annual-return" type="number" inputmode="decimal" step="any" value="7" /><span>%</span></span><div class="goal-presets" aria-label="想定年利プリセット"><button type="button" data-goal-rate="3">3%</button><button type="button" data-goal-rate="5">5%</button><button type="button" data-goal-rate="7">7%</button><button type="button" data-goal-rate="10">10%</button></div></div>
+            </div>
+            <div class="goal-form-actions"><p id="goal-error" class="goal-error" role="alert" hidden></p><button class="button primary" type="submit">シミュレーション</button></div>
+          </form>
+          <section id="goal-result-panel" class="panel goal-result-panel" aria-labelledby="goal-results-heading" data-has-result="false">
+            <div class="goal-result-layout">
+              <div class="goal-result-content">
+                <h3 id="goal-results-heading">シミュレーション結果</h3>
+                <div class="goal-result-status">
+                  <span class="goal-result-state-icon" aria-hidden="true">
+                    <svg data-goal-state-icon="achieved" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m8 12 2.5 2.5L16.5 9"/></svg>
+                    <svg data-goal-state-icon="projected" viewBox="0 0 24 24"><path d="M4 17 9 12l3.5 3.5L20 8"/><path d="M14 8h6v6"/></svg>
+                    <svg data-goal-state-icon="unmet" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>
+                  </span>
+                  <strong id="goal-result-state-label">—</strong>
+                </div>
+                <p id="goal-summary" class="goal-summary" aria-live="polite"><span id="goal-summary-detail"></span></p>
+                <div class="goal-result-lower">
+                  <div class="goal-achievement-wrap">
+                    <div id="goal-achievement-donut" class="goal-achievement-donut" role="img" aria-label="目標達成率 0%">
+                      <div class="goal-achievement-center"><span>達成率</span><strong id="goal-result-achievement">—</strong></div>
+                    </div>
+                  </div>
+                  <div class="goal-result-highlights">
+                    <div class="goal-result-highlight"><span id="goal-result-primary-label">—</span><strong id="goal-result-primary-value">—</strong></div>
+                    <div id="goal-result-secondary-highlight" class="goal-result-highlight"><span id="goal-result-secondary-label">—</span><strong id="goal-result-secondary-value">—</strong></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="goal-chart-panel" class="panel goal-chart-panel" aria-labelledby="goal-chart-heading" hidden>
+            <div class="goal-chart-heading"><div><h3 id="goal-chart-heading">資産推移</h3><p>現在の条件を継続した場合の予想資産推移</p></div></div>
+            <div class="goal-chart-wrap">
+              <svg id="goal-chart" viewBox="0 0 1000 420" preserveAspectRatio="none" role="img" aria-label="予想資産推移グラフ"></svg>
+              <div id="goal-chart-tooltip" class="goal-chart-tooltip" role="status" hidden></div>
+            </div>
+          </section>
+          <section id="goal-annual-returns-panel" class="panel goal-annual-returns-panel" aria-labelledby="goal-annual-returns-heading" hidden>
+            <div class="goal-chart-heading"><div><h3 id="goal-annual-returns-heading">年ごとのリターン</h3><p>各年の資産増加を、積立額と運用益に分けて表示します。</p></div></div>
+            <div class="goal-annual-table-wrap" role="region" aria-label="年ごとのリターン一覧" tabindex="0">
+              <table class="goal-annual-table">
+                <thead><tr><th scope="col">年</th><th scope="col">年初資産</th><th scope="col">年末資産</th><th scope="col">年間積立額</th><th scope="col">年間運用益</th><th scope="col">年間リターン率</th></tr></thead>
+                <tbody id="goal-annual-returns-body"></tbody>
+              </table>
+            </div>
+          </section>
         </section>
 
         <section id="heatmap-view" class="view">
@@ -201,6 +266,7 @@
         <button class="nav-item active" data-view="dashboard"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-dashboard"/></svg></span>TOP</button>
         <button class="nav-item" data-view="holdings"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-holdings"/></svg></span>保有資産</button>
         <button class="nav-item" data-view="accounts"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-accounts"/></svg></span>証券口座</button>
+        <button class="nav-item" data-view="goal"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-goal"/></svg></span>目標</button>
       </nav>
     </div>
 
@@ -214,10 +280,11 @@
       </section>
     </dialog>
 
-    <dialog id="holding-dialog"><form id="holding-form" method="dialog" class="dialog-card"><div class="dialog-heading"><div><p class="eyebrow" id="holding-form-kicker">NEW HOLDING</p><h2 id="holding-dialog-title">保有資産を追加</h2></div><button type="button" class="close" data-close="holding-dialog">×</button></div><input type="hidden" id="holding-id" /><label>証券口座<select id="holding-account" required></select></label><label>口座区分<select id="holding-account-category" required></select></label><div class="form-row"><label>資産区分<select id="holding-type" required><option>日本株</option><option>米国株</option><option>投資信託</option></select></label><label>通貨<select id="holding-currency" required><option value="JPY">JPY</option><option value="USD">USD</option></select></label></div><label>銘柄名<input id="holding-name" placeholder="例：トヨタ自動車" required /></label><label>Yahoo Finance ティッカー<input id="holding-symbol" placeholder="例：7203 / AAPL" required autocapitalize="characters" /><small>このティッカーで価格を自動取得します</small><button type="button" class="text-button lookup-button" id="lookup-name">銘柄情報取得</button><small id="name-lookup-status" class="lookup-status" aria-live="polite"></small></label><div class="form-row"><label><span id="quantity-label">保有数量</span><input id="holding-quantity" type="number" inputmode="decimal" min="0.0001" step="any" placeholder="100" required /></label><label><span id="cost-label">取得単価</span><input id="holding-cost" type="number" inputmode="decimal" min="0" step="any" placeholder="2500" required /></label></div><p id="fund-unit-note" class="fund-unit-note" hidden>投資信託の基準価額・取得基準価額は、常に <strong>1万口あたり</strong> で入力・計算します。</p><div class="dialog-actions"><button type="button" class="button ghost" data-close="holding-dialog">キャンセル</button><button class="button primary" value="default">保存する</button></div></form></dialog>
+    <dialog id="holding-dialog"><form id="holding-form" method="dialog" class="dialog-card"><div class="dialog-heading"><div><p class="eyebrow" id="holding-form-kicker">NEW HOLDING</p><h2 id="holding-dialog-title">保有資産を追加</h2></div><button type="button" class="close" data-close="holding-dialog">×</button></div><input type="hidden" id="holding-id" /><label>証券口座<select id="holding-account" required></select></label><label>口座区分<select id="holding-account-category" required></select></label><div class="form-row"><label>資産区分<select id="holding-type" required><option>日本株</option><option>米国株</option><option>投資信託</option></select></label><label>通貨<select id="holding-currency" required><option value="JPY">JPY</option><option value="USD">USD</option></select></label></div><label>銘柄名<input id="holding-name" placeholder="例：トヨタ自動車" required /></label><label><span id="holding-symbol-label">Yahoo Finance ティッカー</span><input id="holding-symbol" placeholder="例：7203 / AAPL" required autocapitalize="characters" /><small id="holding-symbol-help">このティッカーで価格を自動取得します</small><button type="button" class="text-button lookup-button" id="lookup-name">銘柄情報取得</button><small id="name-lookup-status" class="lookup-status" aria-live="polite"></small></label><div class="form-row"><label><span id="quantity-label">保有数量</span><input id="holding-quantity" type="text" inputmode="decimal" placeholder="100" autocomplete="off" /></label><label><span id="cost-label">取得単価</span><input id="holding-cost" type="text" inputmode="decimal" placeholder="2500" autocomplete="off" /><small id="holding-cost-calculated" class="holding-cost-calculated" hidden></small></label></div><p id="holding-input-error" class="form-validation-error" role="alert" aria-live="polite" hidden></p><p id="fund-unit-note" class="fund-unit-note" hidden>投資信託の基準価額・取得基準価額は、常に <strong>1万口あたり</strong> で入力・計算します。</p><div class="dialog-actions"><button type="button" class="button ghost" data-close="holding-dialog">キャンセル</button><button class="button primary" value="default">保存する</button></div></form></dialog>
 
     <dialog id="account-dialog"><form id="account-form" method="dialog" class="dialog-card small-dialog"><div class="dialog-heading"><div><p class="eyebrow" id="account-form-kicker">NEW ACCOUNT</p><h2 id="account-dialog-title">証券口座を追加</h2></div><button type="button" class="close" data-close="account-dialog">×</button></div><input type="hidden" id="account-id" /><label>口座名<input id="account-name" placeholder="例：SBI証券" required /></label><label>メモ（任意）<input id="account-note" placeholder="例：NISA / 特定口座" /></label><div class="dialog-actions"><button type="button" class="button ghost" data-close="account-dialog">キャンセル</button><button class="button primary" value="default">保存する</button></div></form></dialog>
     <script src="symbols.js?v=20260927-1"></script>
-    <script src="app.js?v=20260928-4"></script>
+    <script src="asset-goal-simulation.js?v=20260928-1"></script>
+    <script src="app.js?v=20260929-5"></script>
   </body>
 </html>

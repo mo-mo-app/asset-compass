@@ -2,6 +2,8 @@
 
 #holding-dialog #holding-account,#holding-dialog #holding-account-category{margin-left:12px}
 .holding-quantity{display:none}
+.holding-cost-calculated[hidden]{display:none}
+.form-validation-error{color:var(--red);font-size:11px;min-height:1em;margin-top:-7px}
 .holding-pc-quantity,.holding-meta-type{display:none}
 #holdings-view .holdings-account-heading{margin:22px 0 0;padding-bottom:9px;border-bottom:1px solid var(--line);font-size:16px;letter-spacing:-.03em}
 #holdings-view .table-head + .holdings-account-heading{margin-top:12px}
@@ -73,11 +75,11 @@
   .mobile-brand .brand-mark{width:27px;height:27px}
   .mobile-brand-name{font-size:17px;letter-spacing:-.55px}
   main{width:100%;max-width:none;margin:0;padding:18px 14px calc(88px + env(safe-area-inset-bottom))}
-  #dashboard-view .status-line{display:flex;flex-wrap:wrap;justify-content:flex-start;align-items:center;gap:4px 0;min-width:0}
-  #dashboard-view .status-line > .dot{margin-inline:4px}
-  #dashboard-view .status-line #last-fetch-at + .dot{display:none}
+  #dashboard-view .status-line{display:flex;flex-wrap:nowrap;justify-content:flex-start;align-items:center;gap:0;min-width:0;width:100%;overflow:hidden;font-size:clamp(9px,3vw,11px)}
+  #dashboard-view .status-line > span{flex:0 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #dashboard-view .status-line > .dot{flex:0 0 auto;margin-inline:4px}
   #dashboard-view .status-line #quote-status,#dashboard-view .status-line #last-fetch-at{min-width:0;white-space:nowrap}
-  #dashboard-view .status-line span:last-child{flex:0 0 100%;font-size:11px}
+  #dashboard-view .status-line span:last-child{flex:0 1 auto;font-size:inherit}
   #dashboard-view .metrics{grid-template-columns:minmax(0,1.2fr) minmax(0,.9fr);grid-template-rows:repeat(2,minmax(0,1fr));gap:8px}
   #dashboard-view .metric.total{grid-column:1;grid-row:1 / span 2;display:flex;flex-direction:column;justify-content:center;min-width:0;padding:14px}
   #dashboard-view .metric:not(.total){min-width:0;padding:10px}
@@ -91,12 +93,20 @@
   #dashboard-view .metric.total .metric-icon{stroke:#91d4be}
   header{gap:12px}
   h1{font-size:25px}
-  .mobile-bottom-nav{position:fixed;z-index:20;inset:auto 0 0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;padding:6px 8px calc(6px + env(safe-area-inset-bottom));border-top:1px solid #395052;background:#15282a}
+  .mobile-bottom-nav{position:fixed;z-index:20;inset:auto 0 0;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px;padding:6px 8px calc(6px + env(safe-area-inset-bottom));border-top:1px solid #395052;background:#15282a}
   .mobile-bottom-nav .nav-item{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;width:100%;min-height:52px;padding:6px 3px;border-radius:8px;color:#bac6c4;font:500 10px/1.2 "Noto Sans JP",sans-serif;text-align:center;white-space:nowrap}
   .mobile-bottom-nav .nav-item span{width:auto;font-size:18px;line-height:1}
   .mobile-bottom-nav .nav-item.active{color:#fff;background:#294144}
   .mobile-bottom-nav .nav-item:focus-visible{outline:2px solid #91d4be;outline-offset:1px}
   .refresh-controls{width:min(100%,380px)}
+  body:has(#dashboard-view.active) header{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:8px}
+  body:has(#dashboard-view.active) header > div:first-child{min-width:0}
+  body:has(#dashboard-view.active) #today{margin-bottom:2px}
+  body:has(#dashboard-view.active) #page-title{font-size:clamp(20px,6.2vw,25px);white-space:nowrap}
+  body:has(#dashboard-view.active) .refresh-controls{width:auto;max-width:none;padding:6px}
+  body:has(#dashboard-view.active) .update-info-primary{gap:6px}
+  body:has(#dashboard-view.active) .usd-jpy-rate{font-size:9px}
+  body:has(#dashboard-view.active) .usd-jpy-timestamp{font-size:9px}
   header{flex-wrap:wrap}
   .fx-info{align-items:flex-start}
   .update-info-primary .button{width:40px;height:40px;padding:6px;flex:0 0 40px}
@@ -155,6 +165,7 @@
 }
 
 .allocation-chart-layout{display:flex;align-items:center;justify-content:center;gap:24px;min-height:164px}
+.grid-two > section:first-child .panel-heading{margin-bottom:10px}
 .allocation-donut{width:148px;height:148px;flex:0 0 148px;display:grid;place-items:center;border-radius:50%;background:var(--allocation-chart);position:relative}
 .allocation-donut::before{content:"";position:absolute;inset:30px;border-radius:50%;background:var(--panel)}
 .allocation-donut-center{position:relative;z-index:1;display:grid;justify-items:center;gap:5px;width:calc(100% - 34px);text-align:center}
@@ -446,8 +457,6 @@
 #dashboard-view .account-summary-value,#dashboard-view .account-summary-gain{text-align:right}
 #dashboard-view .account-summary-rate{display:flex;justify-content:flex-end}
 #dashboard-view .account-summary-rate .dashboard-holding-rate-badge{color:#fff}
-main > header #refresh-all{background:var(--gain-bg)}
-main > header #refresh-all:hover{background:var(--gain-bg);filter:brightness(.92)}
 #dashboard-view .dashboard-accounts-edit,
 #dashboard-view .dashboard-holdings-details,
 #dashboard-view .asset-trend-details,
@@ -488,4 +497,161 @@ main > header #refresh-all:hover{background:var(--gain-bg);filter:brightness(.92
   .version-history-entry{padding:15px 0}
   .version-history-commit-title{font-size:12px}
   .version-history-changes{font-size:12px}
+}
+
+.view-toolbar-actions{display:flex;align-items:center;gap:8px}
+@media(max-width:600px){
+  #holdings-view .view-toolbar-actions{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px}
+  #holdings-view .view-toolbar-actions #add-holding{grid-column:1 / -1;grid-row:2}
+  #holdings-view .view-toolbar-actions [data-go="dashboard"]{grid-column:2;grid-row:1;justify-self:end}
+  #accounts-view .toolbar{align-items:flex-start}
+  #accounts-view .view-toolbar-actions{flex-direction:column;align-items:flex-end;gap:7px}
+}
+
+.dashboard-status-row{display:flex;align-items:center;justify-content:space-between;gap:12px;min-width:0;margin:32px 0 17px}
+.dashboard-status-row .status-line{flex:1 1 auto;min-width:0;margin:0}
+.market-weather{display:flex;align-items:center;justify-content:flex-end;gap:7px;flex:0 0 auto;white-space:nowrap;color:var(--muted);font-size:11px}
+.market-weather-title{margin-right:1px}
+.market-weather-item{display:inline-flex;align-items:center;gap:3px;border:0;border-radius:5px;background:transparent;color:inherit;padding:3px;line-height:1;cursor:help}
+.market-weather-item:hover{background:var(--teal-soft)}
+.market-weather-item:focus-visible{outline:2px solid var(--teal);outline-offset:1px}
+.market-weather-code{font-size:10px;font-weight:600;letter-spacing:.02em}
+.market-weather-item img{display:block;width:22px;height:22px;object-fit:contain}
+.market-weather-rate{font-size:10px;font-variant-numeric:tabular-nums;opacity:.78}
+@media(min-width:601px) and (max-width:1100px){
+  .dashboard-status-row{flex-wrap:wrap;gap:6px 12px}
+  .market-weather{margin-left:auto}
+}
+@media(max-width:600px){
+  #dashboard-view .dashboard-status-row{display:grid;grid-template-columns:minmax(0,1fr);gap:3px;margin:5px 0 5px;container-name:dashboard-status-row;container-type:inline-size}
+  #dashboard-view .dashboard-status-row .status-line{margin:0}
+  #dashboard-view .market-weather{justify-content:flex-start;margin:0;gap:7px}
+}
+@container dashboard-status-row (max-width:230px){
+  #dashboard-view .market-weather-rate{display:none}
+}
+
+.goal-toolbar{align-items:center}
+.goal-toolbar > .button{flex:0 0 auto;white-space:nowrap}
+.goal-toolbar .goal-intro{margin-top:7px;color:var(--muted);font-size:12px;line-height:1.6}
+.goal-input-panel,.goal-result-panel{margin-bottom:14px}
+.goal-input-panel h3,.goal-result-panel h3{margin:0;font-size:15px;letter-spacing:-.03em}
+.goal-result-panel{--goal-result-accent:#79d8b7;overflow:hidden;padding:16px 24px;background:#1b3435;border:0;color:#f5faf7}
+.goal-result-panel[data-state="achieved"]{--goal-result-accent:#e4bc56}
+.goal-result-panel[data-state="projected"]{--goal-result-accent:#79d8b7}
+.goal-result-panel[data-state="unmet"]{--goal-result-accent:#f0ad55}
+.goal-result-layout{display:grid;grid-template-columns:minmax(150px,.75fr) minmax(0,1.8fr);grid-template-areas:"donut title" "donut status" "donut summary" "donut highlights";align-items:center;gap:6px 20px}
+.goal-result-content,.goal-result-lower{display:contents}
+.goal-result-content > h3{grid-area:title;margin:0 0 1px;color:#f5faf7}
+.goal-result-status{grid-area:status;display:flex;align-items:center;gap:9px;flex:0 0 auto;color:var(--goal-result-accent)}
+.goal-result-status > strong{font-size:17px;font-weight:700}
+.goal-result-state-icon{display:grid;place-items:center;width:26px;height:26px;flex:0 0 auto}
+.goal-result-state-icon svg{display:none;width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.goal-result-panel[data-state="achieved"] [data-goal-state-icon="achieved"],.goal-result-panel[data-state="projected"] [data-goal-state-icon="projected"],.goal-result-panel[data-state="unmet"] [data-goal-state-icon="unmet"]{display:block}
+.goal-result-highlights{grid-area:highlights;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:22px;min-width:0;margin-top:2px}
+.goal-result-panel[data-state="achieved"] .goal-result-highlights{grid-template-columns:minmax(0,1fr)}
+.goal-result-highlight{display:grid;align-content:start;gap:7px;min-width:0}
+.goal-result-highlight[hidden]{display:none}
+.goal-result-highlight > span{color:#b9cfca;font-size:11px}
+.goal-result-highlight > strong{overflow-wrap:anywhere;color:var(--goal-result-accent);font:600 clamp(15px,1.7vw,21px) "DM Mono","Noto Sans JP",monospace;letter-spacing:-.04em}
+.goal-achievement-wrap{grid-area:donut;display:grid;place-items:center;min-width:0}
+.goal-achievement-donut{position:relative;display:grid;place-items:center;width:clamp(145px,17vw,190px);aspect-ratio:1;border-radius:50%;background:conic-gradient(var(--goal-result-accent) var(--goal-achievement-progress,0%),rgba(255,255,255,.16) 0)}
+.goal-achievement-donut::before{position:absolute;inset:18px;border-radius:50%;background:#1b3435;content:""}
+.goal-achievement-center{position:relative;z-index:1;display:grid;justify-items:center;gap:7px;text-align:center}
+.goal-achievement-center span{color:#b9cfca;font-size:11px}
+.goal-achievement-center strong{font:600 clamp(21px,2.2vw,29px) "DM Mono","Noto Sans JP",monospace;letter-spacing:-.06em;color:#fff;white-space:nowrap}
+.goal-result-panel .goal-summary{grid-area:summary;min-width:0;margin:0;color:#d2e5de;font-size:13px;line-height:1.6}
+.goal-input-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
+.goal-field{display:grid;align-content:start;gap:6px;min-width:0;font-size:12px;font-weight:600}
+.goal-field small{color:var(--muted);font-size:10px;font-weight:400}
+.goal-input-wrap{display:flex;align-items:center;gap:8px;min-width:0}
+.goal-input-wrap input{min-width:0;margin:0;font:500 15px "DM Mono","Noto Sans JP",monospace;text-align:right}
+.goal-input-wrap > span{flex:0 0 auto;color:var(--muted);font-size:11px;font-weight:400;white-space:nowrap}
+.goal-presets{display:flex;flex-wrap:wrap;gap:6px;margin-top:1px}
+.goal-presets button{min-width:43px;padding:5px 9px;border:1px solid var(--line);border-radius:5px;background:#fff;color:var(--muted);font:500 11px "DM Mono",monospace;cursor:pointer}
+.goal-presets button:hover,.goal-presets button:focus-visible{border-color:var(--teal);background:var(--teal-soft);color:var(--teal)}
+.goal-form-actions{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:12px;margin-top:19px}
+.goal-form-actions .button{white-space:nowrap}
+.goal-form-actions .goal-error{grid-column:1;grid-row:1}
+.goal-form-actions .button{grid-column:2;grid-row:1}
+.goal-error{color:var(--loss-color);font-size:11px;line-height:1.5}
+.goal-error[hidden]{display:none}
+.goal-chart-panel[hidden]{display:none}
+.goal-annual-returns-panel{margin-top:14px}
+.goal-annual-returns-panel[hidden]{display:none}
+.goal-chart-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:8px}
+.goal-chart-heading h3{margin:0 0 5px;font-size:15px;letter-spacing:-.03em}
+.goal-chart-heading p{color:var(--muted);font-size:11px}
+.goal-annual-table-wrap{width:100%;min-width:0;overflow-x:auto;overscroll-behavior-x:contain}
+.goal-annual-table{width:100%;min-width:790px;border-collapse:collapse;font-size:12px;white-space:nowrap}
+.goal-annual-table th,.goal-annual-table td{padding:12px 10px;border-bottom:1px solid var(--line);text-align:right}
+.goal-annual-table thead th{color:var(--muted);font-size:11px;font-weight:500}
+.goal-annual-table thead th:first-child{position:sticky;left:0;z-index:1;background:var(--panel);text-align:left}
+.goal-annual-table tbody th{position:sticky;left:0;background:var(--panel);text-align:left;font-weight:600}
+.goal-annual-table tbody tr:last-child th,.goal-annual-table tbody tr:last-child td{border-bottom:0}
+.goal-annual-table .positive,.goal-annual-table .negative{font-weight:600}
+.goal-chart-wrap{position:relative;width:100%;min-width:0}
+#goal-chart{display:block;width:100%;height:330px;overflow:visible;touch-action:pan-y}
+.goal-chart-gridline{stroke:var(--line);stroke-width:1;vector-effect:non-scaling-stroke}
+.goal-chart-y-label,.goal-chart-x-label{fill:var(--muted);font:12px "DM Mono","Noto Sans JP",sans-serif}
+.goal-chart-x-label{font-size:11px}
+.goal-chart-area{fill:url(#goal-chart-area-gradient)}
+.goal-chart-line{fill:none;stroke:var(--teal);stroke-width:3;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke}
+.goal-chart-target{stroke:var(--gold);stroke-width:1.5;stroke-dasharray:6 5;vector-effect:non-scaling-stroke}
+.goal-chart-goal-guide{stroke:var(--teal);stroke-width:1;stroke-dasharray:3 4;opacity:.38;vector-effect:non-scaling-stroke}
+.goal-chart-target-label,.goal-chart-goal-label{fill:var(--muted);font:600 12px "Noto Sans JP",sans-serif}
+.goal-chart-goal-label{fill:var(--teal);font-size:13px}
+.goal-chart-x-axis{stroke:var(--line);stroke-width:1;vector-effect:non-scaling-stroke}
+.goal-chart-sample,.goal-chart-single-point{fill:var(--teal);stroke:#fff;stroke-width:2;vector-effect:non-scaling-stroke}
+.goal-chart-goal-marker{fill:var(--gold);stroke:#fff;stroke-width:3;vector-effect:non-scaling-stroke}
+.goal-chart-hit{fill:transparent;stroke:transparent;cursor:crosshair}
+.goal-chart-hit:focus-visible{fill:rgba(22,115,107,.12);stroke:var(--teal);stroke-width:2;outline:none;vector-effect:non-scaling-stroke}
+.goal-chart-tooltip{position:absolute;z-index:2;display:grid;gap:4px;min-width:max-content;padding:9px 11px;border:1px solid var(--line);border-radius:7px;background:#fff;color:var(--ink);box-shadow:0 5px 18px #1220241c;font-size:11px;line-height:1.4;transform:translate(-50%,-100%);pointer-events:none}
+.goal-chart-tooltip[hidden]{display:none}
+.goal-chart-tooltip strong{font-size:11px}
+.goal-chart-tooltip.is-below{transform:translate(-50%,0)}
+@media(min-width:601px) and (max-width:900px){
+  .goal-input-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .goal-result-layout{grid-template-columns:minmax(124px,.65fr) minmax(0,1.5fr);gap:15px}
+  .goal-result-highlights{grid-template-columns:minmax(0,1fr);gap:12px}
+  .goal-achievement-donut{width:clamp(124px,18vw,165px)}
+}
+@media(min-width:901px){
+  .goal-field{gap:5px}
+  .goal-input-wrap input{padding:8px 10px}
+  .goal-presets{gap:5px}
+  .goal-presets button{min-width:39px;padding:4px 7px}
+}
+@media(max-width:600px){
+  .goal-toolbar{align-items:flex-start;gap:12px}
+  .goal-toolbar .goal-intro{max-width:40em}
+  .goal-toolbar > .button{padding:9px 10px;font-size:11px}
+  .goal-input-wrap input{font-size:16px}
+  .goal-input-panel{padding:16px}
+  .goal-result-panel{padding:19px 16px}
+  .goal-result-content{display:contents}
+  .goal-result-layout{grid-template-columns:minmax(0,1fr);grid-template-areas:"title" "status" "summary" "lower";align-items:center;row-gap:8px}
+  .goal-result-lower{grid-area:lower;display:grid;grid-template-columns:auto auto;grid-template-areas:"donut highlights";align-items:center;justify-content:center;gap:18px;min-width:0}
+  .goal-result-highlights{grid-template-columns:minmax(0,1fr);justify-items:stretch;gap:12px;width:max-content;max-width:100%;margin:0;text-align:left}
+  .goal-achievement-donut{width:clamp(108px,34vw,140px)}
+  .goal-input-grid{grid-template-columns:minmax(0,1fr);gap:14px}
+  .goal-result-highlights{grid-template-columns:minmax(0,1fr);gap:12px}
+  .goal-result-highlight > strong{font-size:clamp(15px,4vw,17px)}
+  .goal-result-highlight > span{font-size:10px}
+  .goal-result-panel .goal-summary{font-size:13px}
+  #goal-chart{height:270px}
+  .goal-annual-table th,.goal-annual-table td{padding:10px 2px}
+  .goal-annual-table{min-width:600px}
+  .goal-chart-y-label{font-size:11px}
+  .goal-chart-x-label{font-size:10px}
+  .goal-form-actions{display:flex;align-items:stretch;flex-direction:column-reverse}
+  .goal-form-actions .button{width:100%}
+}
+@media(min-width:601px){
+  #dashboard-view .dashboard-status-row{margin-top:0px;margin-bottom:10px}
+  #dashboard-view .grid-two > section.panel{padding-top:16px;padding-bottom:16px}
+  #dashboard-view .grid-two > section.panel .panel-heading{margin-bottom:10px}
+  #dashboard-view .grid-two > section:first-child .panel-heading{margin-bottom:10px}
+  #dashboard-view #account-summary .account-summary-row{padding-top:11px;padding-bottom:11px}
+  #dashboard-view #account-summary .account-summary-row:first-child{padding-top:0}
 }

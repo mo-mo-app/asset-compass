@@ -9,7 +9,7 @@ const root = __dirname;
 let migration = null;
 const port = Number(process.env.ASSET_COMPASS_PORT) || 8766;
 const bindLan = process.env.ASSET_COMPASS_BIND_LAN !== "false";
-const publicFiles = new Set(["index.html", "app.js", "symbols.js", "styles.css", "funds.css", "assets/version-history.json", "assets/asset-compass-logo.svg", "assets/asset-compass-icon.svg", "assets/asset-compass-mono.svg", "assets/favicon.svg", "assets/apple-touch-icon.png", "assets/icons/asset-weather-storm.svg", "assets/icons/asset-weather-rain.svg", "assets/icons/asset-weather-cloud.svg", "assets/icons/asset-weather-partly-cloudy.svg", "assets/icons/asset-weather-sunny.svg", "assets/icons/asset-weather-very-sunny.svg", "assets/icons/asset-weather-special.svg"]);
+const publicFiles = new Set(["index.html", "app.js", "symbols.js", "asset-goal-simulation.js", "styles.css", "funds.css", "assets/version-history.json", "assets/asset-compass-logo.svg", "assets/asset-compass-icon.svg", "assets/asset-compass-mono.svg", "assets/favicon.svg", "assets/apple-touch-icon.png", "assets/icons/asset-weather-storm.svg", "assets/icons/asset-weather-rain.svg", "assets/icons/asset-weather-cloud.svg", "assets/icons/asset-weather-partly-cloudy.svg", "assets/icons/asset-weather-sunny.svg", "assets/icons/asset-weather-very-sunny.svg", "assets/icons/asset-weather-special.svg"]);
 
 const contentTypes = {".html":"text/html; charset=utf-8",".js":"text/javascript; charset=utf-8",".css":"text/css; charset=utf-8",".json":"application/json; charset=utf-8",".svg":"image/svg+xml",".png":"image/png"};
 const send = (res, status, body, type="application/json; charset=utf-8") => {
@@ -76,6 +76,57 @@ async function quote(symbol, type) {
   const result = (await response.json()).chart?.result?.[0];
   return stockQuoteFromChart(result);
 }
+const marketIndexSources = {
+  US: [
+    { symbol: "^GSPC", name: "S&P500" },
+    { symbol: "^NDX", name: "NASDAQ100" }
+  ],
+  JP: [
+    { symbol: "^N225", name: "日経平均" },
+    { symbol: "998405.T", provider: "yahoo-japan", name: "TOPIX" }
+  ]
+};
+async function yahooJapanIndexChange(quoteCode) {
+  const response = await fetch(`https://finance.yahoo.co.jp/quote/${encodeURIComponent(quoteCode)}`, {headers: {"User-Agent": "Mozilla/5.0 (Asset Compass)"}});
+  if (!response.ok) throw new Error(`Yahoo! Finance Japan returned ${response.status}`);
+  const html = await response.text();
+  const currentPriceMatch = html.match(/PriceBoard__price__[^\"]*\">[\s\S]{0,500}?StyledNumber__value[^>]*>([\d,]+(?:\.\d+)?)/);
+  const changeBlock = html.match(/<dt[^>]*>前日比<\/dt>([\s\S]{0,1400}?)(?:<\/dl>|<\/div>)/);
+  const changeAmountMatch = changeBlock?.[1].match(/PriceChangeLabel__primary[^>]*>[\s\S]{0,400}?StyledNumber__value[^>]*>([+-]?\d[\d,]*(?:\.\d+)?)/);
+  if (!currentPriceMatch || !changeAmountMatch) throw new Error("Yahoo! Finance Japan did not provide the index daily change");
+  const currentPrice = Number(currentPriceMatch[1].replaceAll(",", ""));
+  const changeAmount = Number(changeAmountMatch[1].replaceAll(",", ""));
+  const previousClose = currentPrice - changeAmount;
+  if (!Number.isFinite(currentPrice) || !Number.isFinite(changeAmount) || !Number.isFinite(previousClose) || previousClose <= 0) {
+    throw new Error("Yahoo! Finance Japan returned an invalid index daily change");
+  }
+  return changeAmount / previousClose * 100;
+}
+async function marketWeather() {
+  const markets = await Promise.all(Object.entries(marketIndexSources).map(async ([market, sources]) => {
+    const indices = await Promise.all(sources.map(async source => {
+      try {
+        let changePercent;
+        if (source.provider === "yahoo-japan") {
+          changePercent = await yahooJapanIndexChange(source.symbol);
+        } else {
+          const quoteData = await quote(source.symbol, source.type);
+          changePercent = Number.isFinite(quoteData.price) && Number.isFinite(quoteData.previousClose) && quoteData.previousClose > 0
+            ? (quoteData.price - quoteData.previousClose) / quoteData.previousClose * 100
+            : null;
+        }
+        return { symbol: source.symbol, name: source.name, changePercent };
+      } catch {
+        return { symbol: source.symbol, name: source.name, changePercent: null };
+      }
+    }));
+    const changePercent = indices.length === 2 && indices.every(index => Number.isFinite(index.changePercent))
+      ? indices.reduce((sum, index) => sum + index.changePercent, 0) / 2
+      : null;
+    return { market, indices, changePercent };
+  }));
+  return { apiVersion: 1, markets };
+}
 async function stockName(symbol, type) {
   const quoteSymbol = toQuoteSymbol(type, symbol);
   if (!/^[A-Z0-9.=^\-]+$/i.test(quoteSymbol)) throw new Error("Invalid symbol");
@@ -89,7 +140,8 @@ async function stockName(symbol, type) {
   return {name};
 }
 async function fundQuote(code) {
-  if (!/^\d{8}$/.test(code)) throw new Error("投信コードは8桁で入力してください");
+  code = String(code || "").toUpperCase();
+  if (!/^[A-Z0-9]{8}$/.test(code)) throw new Error("投信コードは半角英数字8文字で入力してください");
   const response = await fetch(`https://finance.yahoo.co.jp/quote/${code}`, {headers:{"User-Agent":"Mozilla/5.0 (Asset Compass)"}});
   if (!response.ok) throw new Error("Yahoo!ファイナンスで投信コードが見つかりません");
   const html = await response.text();
@@ -107,6 +159,7 @@ async function fundQuote(code) {
 const handleRequest = async (req, res) => {
   const url = new URL(req.url, `http://127.0.0.1:${port}`);
   if (req.method === "OPTIONS") return send(res, 204, "", "text/plain");
+  if (url.pathname === "/api/v1/market-weather" && req.method === "GET") return send(res, 200, await marketWeather());
   if (url.pathname === "/api/v1/state" && req.method === "GET") return send(res, 200, getState());
   if (url.pathname === "/api/v1/snapshots" && req.method === "GET") {
     const today = jstToday();

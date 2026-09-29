@@ -2,6 +2,7 @@ const KEY = "asset-compass-v1";
 const LOCAL_BACKUP_KEY = "asset-compass-v1-pre-sync-backup";
 const { normalizeStoredSymbol, displaySymbol, sameHoldingSlot } = AssetCompassSymbols;
 const jpyNumber = new Intl.NumberFormat("ja-JP", { maximumFractionDigits: 0 });
+const goalInputNumber = new Intl.NumberFormat("ja-JP", { maximumFractionDigits: 20 });
 const formatJpyAmount = amount => Number.isFinite(amount) ? `${jpyNumber.format(amount)}円` : "—";
 const formatMetricJpyAmount = (amount, withSign = false) => {
   if (!Number.isFinite(amount)) return "—";
@@ -35,6 +36,8 @@ let selectedAssetTrendRange = "1m";
 let selectedTrendDetailRange = "1m";
 let selectedTrendDetailAccountId = "total";
 let versionHistoryEntries = [];
+let goalSimulationChartData = [];
+let latestGoalChartRender = null;
 
 const $ = (s) => document.querySelector(s);
 const cloneData = value => JSON.parse(JSON.stringify(value));
@@ -180,6 +183,7 @@ const formatHoldingPrice = h => {
 };
 const hasValuation = (h) => hasQuote(h) && (h.currency !== "USD" || Number.isFinite(fxRate));
 const valueOf = (h) => hasValuation(h) ? h.price * h.quantity / quantityDivisor(h) * (h.currency === "USD" ? fxRate : 1) : null;
+function getCurrentTotalAssets() { return data.holdings.filter(hasValuation).reduce((sum, holding) => sum + valueOf(holding), 0); }
 const costOf = (h) => h.currency === "USD" && !Number.isFinite(fxRate) ? null : h.cost * h.quantity / quantityDivisor(h) * (h.currency === "USD" ? fxRate : 1);
 const gainClass = (n) => n > 0 ? "positive" : n < 0 ? "negative" : "";
 const signed = n => Number.isFinite(n) ? `${n > 0 ? "+" : n < 0 ? "-" : ""}${formatJpyAmount(Math.abs(n))}` : "—";
@@ -203,6 +207,73 @@ const ASSET_WEATHER = {
   "very-sunny": { label: "強い晴れ", icon: "very-sunny" },
   special: { label: "特別に良い状態", icon: "special" }
 };
+const MARKETS = [
+  { market: "US", name: "米国" },
+  { market: "JP", name: "日本" }
+];
+let marketWeatherByCode = new Map();
+function renderMarketWeather() {
+  const container = $("#market-weather");
+  container.replaceChildren();
+  const title = document.createElement("span");
+  title.className = "market-weather-title";
+  title.textContent = "市況";
+  container.append(title);
+  for (const market of MARKETS) {
+    const result = marketWeatherByCode.get(market.market);
+    const state = getAssetWeatherState(result?.changePercent);
+    const weather = state ? ASSET_WEATHER[state] : null;
+    const indices = Array.isArray(result?.indices) ? result.indices : [];
+    const hasCompleteMarketData = indices.length === 2 && indices.every(index => Number.isFinite(index.changePercent)) && Number.isFinite(result?.changePercent);
+    const formatMarketRate = value => `${value > 0 ? "+" : ""}${value.toFixed(2)}%`;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "market-weather-item";
+    const marketName = market.name;
+    const tooltipLines = hasCompleteMarketData
+      ? [marketName + "市場", ...indices.map(index => `${index.name}  ${formatMarketRate(index.changePercent)}`), `平均  ${formatMarketRate(result.changePercent)}`]
+      : [marketName + "市場", "指数データを取得できません"];
+    button.title = `${tooltipLines.join("\n")}\n判定：${weather?.label || "不明"}`;
+    button.setAttribute("aria-label", button.title.replaceAll("\n", "、"));
+    const code = document.createElement("span");
+    code.className = "market-weather-code";
+    code.textContent = market.market;
+    button.append(code);
+    if (weather) {
+      const icon = document.createElement("img");
+      icon.src = `/assets/icons/asset-weather-${weather.icon}.svg`;
+      icon.alt = "";
+      icon.width = 22;
+      icon.height = 22;
+      icon.setAttribute("aria-hidden", "true");
+      button.append(icon);
+    } else {
+      const placeholder = document.createElement("span");
+      placeholder.className = "market-weather-placeholder";
+      placeholder.textContent = "—";
+      button.append(placeholder);
+    }
+    if (hasCompleteMarketData) {
+      const rate = document.createElement("span");
+      rate.className = "market-weather-rate";
+      rate.textContent = formatMarketRate(result.changePercent);
+      button.append(rate);
+    }
+    container.append(button);
+  }
+}
+async function loadMarketWeather() {
+  try {
+    const response = await fetch("/api/v1/market-weather", { cache: "no-store" });
+    if (!response.ok) throw new Error(`市況データを取得できませんでした（${response.status}）`);
+    const payload = await response.json();
+    if (!Array.isArray(payload.markets)) throw new Error("市況データの形式が正しくありません");
+    marketWeatherByCode = new Map(payload.markets.map(market => [market.market, market]));
+  } catch (error) {
+    console.warn(error.message);
+  }
+  renderMarketWeather();
+}
 function getAssetWeatherState(changePercent) {
   if (!Number.isFinite(changePercent)) return null;
   if (changePercent >= 5) return "special";
@@ -234,7 +305,7 @@ function render() {
   const quoted = holdings.filter(hasQuote);
   const missingQuotes = holdings.length - quoted.length;
   const valued = holdings.filter(hasValuation);
-  const total = valued.reduce((n,h) => n + valueOf(h), 0);
+  const total = getCurrentTotalAssets();
   const cost = valued.reduce((n,h) => n + costOf(h), 0);
   const gain = total - cost;
   const canCompareDay = holdings.length > 0 && valued.length === holdings.length && holdings.every(h => dailyChangePercent(h) !== null);
@@ -256,11 +327,396 @@ function render() {
   const failedQuotes = holdings.filter(h => h.quoteStatus === "failed").length;
   if (failedQuotes) $("#quote-status").textContent += ` ／ 今回取得失敗 ${failedQuotes}件（取得済みの価格は保持）`;
   $("#last-fetch-at").textContent = data.lastQuoteFetchedAt ? `最終取得 ${formatDateTime(data.lastQuoteFetchedAt)}` : "";
+  renderMarketWeather();
   $("#usd-jpy-rate").textContent = Number.isFinite(fxRate) ? `USD/JPY ${fxRate.toFixed(2)}` : "USD/JPY —";
   $("#usd-jpy-timestamp").textContent = Number.isFinite(data.usdJpyTimestamp) ? `為替日時 ${formatDateTime(data.usdJpyTimestamp)}` : "";
   const heatmapGroups = groupHeatmapHoldings(holdings);
   renderAllocation(total); renderAccountSummary(); renderAssetHeatmap(heatmapGroups); renderAssetHeatmapDetail(heatmapGroups); renderDashboardHoldings(); renderHoldingsTable(); renderAccounts(); renderAccountOptions(); renderTrendDetailAccountOptions();
   if (snapshotResponseCache && $("#trend-view").classList.contains("active")) renderAssetTrendDetail(snapshotResponseCache);
+}
+function formatGoalDate(yearMonth) {
+  const match = typeof yearMonth === "string" ? yearMonth.match(/^(\d{4})-(\d{2})$/) : null;
+  return match ? `${Number(match[1])}年${Number(match[2])}月` : "—";
+}
+function formatGoalDuration(months) {
+  if (!Number.isInteger(months) || months < 0) return "--";
+  if (months < 12) return `${months}か月`;
+  const years = Math.floor(months / 12);
+  const remainingMonths = months % 12;
+  return remainingMonths ? `${years}年${remainingMonths}か月` : `${years}年`;
+}
+function clearGoalSimulationResults(message = "条件を入力して「シミュレーション」を実行してください。") {
+  const donut = $("#goal-achievement-donut");
+  $("#goal-result-state-label").textContent = "—";
+  $("#goal-result-primary-label").textContent = "—";
+  $("#goal-result-primary-value").textContent = "—";
+  $("#goal-result-secondary-label").textContent = "—";
+  $("#goal-result-secondary-value").textContent = "—";
+  $("#goal-result-achievement").textContent = "—";
+  $("#goal-result-secondary-highlight").hidden = false;
+  donut.style.setProperty("--goal-achievement-progress", "0%");
+  donut.dataset.achievementRate = "";
+  donut.setAttribute("aria-label", "目標達成率 —");
+  $("#goal-summary-detail").textContent = message;
+  $("#goal-summary").dataset.state = "empty";
+  $("#goal-result-panel").dataset.hasResult = "false";
+  $("#goal-result-panel").dataset.state = "empty";
+  clearGoalChart();
+}
+let goalChartSize = { width: 1000, height: 330, left: 82, right: 984, top: 28, bottom: 295 };
+function formatGoalChartAmount(amount) {
+  const sign = amount < 0 ? "−" : "";
+  const absolute = Math.abs(amount);
+  if (absolute >= 100000000) return `${sign}${(absolute / 100000000).toLocaleString("ja-JP", { maximumFractionDigits: 1 })}億円`;
+  if (absolute >= 10000) return `${sign}${Math.round(absolute / 10000).toLocaleString("ja-JP")}万円`;
+  return `${sign}${Math.round(absolute).toLocaleString("ja-JP")}円`;
+}
+function getGoalChartTickStep(minValue, maxValue, maxTickCount = 7) {
+  const axisReference = Math.max(Math.abs(minValue), Math.abs(maxValue), 1);
+  const baselineStep = 10 ** (Math.floor(Math.log10(axisReference)) - 1);
+  const minimumStep = Math.max(baselineStep, (maxValue - minValue) / (maxTickCount - 1));
+  const firstExponent = Math.floor(Math.log10(minimumStep));
+  for (let exponent = firstExponent - 1; exponent <= firstExponent + 8; exponent += 1) {
+    for (const multiplier of [1, 2, 5]) {
+      const step = multiplier * 10 ** exponent;
+      if (step < minimumStep) continue;
+      const tickCount = Math.floor(maxValue / step) - Math.floor(minValue / step) + 2;
+      if (tickCount <= maxTickCount) return step;
+    }
+  }
+  return 10 ** (firstExponent + 9);
+}
+function clearGoalChart() {
+  goalSimulationChartData = [];
+  latestGoalChartRender = null;
+  $("#goal-chart").replaceChildren();
+  $("#goal-chart-tooltip").hidden = true;
+  $("#goal-chart-panel").hidden = true;
+  $("#goal-annual-returns-panel").hidden = true;
+  $("#goal-annual-returns-body").replaceChildren();
+}
+function buildGoalAnnualReturnData(simulationData) {
+  if (!Array.isArray(simulationData)) return [];
+  const points = simulationData
+    .filter(point => typeof point?.date === "string" && /^\d{4}-(0[1-9]|1[0-2])$/.test(point.date)
+      && Number.isFinite(point.assets) && Number.isFinite(point.cumulativeContribution))
+    .slice()
+    .sort((a, b) => a.date.localeCompare(b.date));
+  const annualData = [];
+  let previousPoint = null;
+  for (const point of points) {
+    const year = Number(point.date.slice(0, 4));
+    let annual = annualData.at(-1);
+    if (!annual || annual.year !== year) {
+      annual = {
+        year,
+        startAssets: previousPoint ? previousPoint.assets : point.assets,
+        endAssets: point.assets,
+        annualContribution: 0,
+        cumulativeContribution: point.cumulativeContribution,
+        cumulativeInvestmentGain: point.investmentGain,
+      };
+      annualData.push(annual);
+    }
+    if (previousPoint) {
+      annual.annualContribution += point.cumulativeContribution - previousPoint.cumulativeContribution;
+    }
+    annual.endAssets = point.assets;
+    annual.cumulativeContribution = point.cumulativeContribution;
+    annual.cumulativeInvestmentGain = Number.isFinite(point.investmentGain)
+      ? point.investmentGain
+      : point.assets - points[0].assets - point.cumulativeContribution;
+    previousPoint = point;
+  }
+  return annualData.map(annual => {
+    const annualInvestmentGain = annual.endAssets - annual.startAssets - annual.annualContribution;
+    return {
+      ...annual,
+      annualInvestmentGain,
+      annualReturnRate: annual.startAssets === 0 ? null : annualInvestmentGain / annual.startAssets * 100,
+    };
+  });
+}
+function renderGoalAnnualReturns(simulationData) {
+  const panel = $("#goal-annual-returns-panel");
+  const body = $("#goal-annual-returns-body");
+  const rows = buildGoalAnnualReturnData(simulationData);
+  body.innerHTML = rows.map(row => {
+    const signedAmount = value => `${value > 0 ? "+" : value < 0 ? "-" : ""}${formatJpyAmount(Math.abs(value))}`;
+    const rate = Number.isFinite(row.annualReturnRate)
+      ? `${row.annualReturnRate > 0 ? "+" : ""}${row.annualReturnRate.toFixed(2)}%`
+      : "—";
+    const gainClassName = row.annualInvestmentGain > 0 ? "positive" : row.annualInvestmentGain < 0 ? "negative" : "";
+    const rateClassName = row.annualReturnRate > 0 ? "positive" : row.annualReturnRate < 0 ? "negative" : "";
+    return `<tr><th scope="row">${row.year}年</th><td>${formatJpyAmount(row.startAssets)}</td><td>${formatJpyAmount(row.endAssets)}</td><td>${formatJpyAmount(row.annualContribution)}</td><td class="${gainClassName}">${signedAmount(row.annualInvestmentGain)}</td><td class="${rateClassName}">${rate}</td></tr>`;
+  }).join("");
+  panel.hidden = rows.length === 0;
+}
+const GOAL_RESULT_MESSAGE_DEFINITIONS = {
+  achieved: {
+    label: "達成済み",
+    primaryLabel: "目標超過",
+    primaryValue: ({ result, targetAssets }) => {
+      const currentAssets = result.simulationData?.[0]?.assets ?? targetAssets;
+      return `+${formatJpyAmount(Math.max(0, currentAssets - targetAssets))}`;
+    },
+    secondaryLabel: "",
+    secondaryValue: () => "",
+    summaryDetail: ({ targetAssets }) => `現在の資産額は目標の${formatGoalChartAmount(targetAssets)}に到達しています。`,
+  },
+  projected: {
+    label: "達成見込み",
+    primaryLabel: "達成予想",
+    primaryValue: ({ result }) => formatGoalDate(result.estimatedGoalDate),
+    secondaryLabel: "あと",
+    secondaryValue: ({ result }) => formatGoalDuration(result.monthsToGoal),
+    summaryDetail: ({ targetAssets }) => `現在の条件を継続すると、目標${formatGoalChartAmount(targetAssets)}を達成可能です。`,
+  },
+  unmet: {
+    label: "期間内に未達",
+    primaryLabel: "終了時予想資産",
+    primaryValue: ({ result }) => formatJpyAmount(result.finalAssets),
+    secondaryLabel: "目標まで",
+    secondaryValue: ({ result, targetAssets }) => `${formatJpyAmount(Math.max(0, targetAssets - result.finalAssets))}不足`,
+    summaryDetail: ({ result }) => `期間終了時点の予想資産は${Number.isFinite(result.finalAssets) ? formatGoalChartAmount(result.finalAssets) : "—"}です。`,
+  },
+};
+function getGoalResultMessageState(result, targetAssets) {
+  const currentAssets = result.simulationData?.[0]?.assets;
+  if ((Number.isFinite(currentAssets) && currentAssets >= targetAssets) || result.monthsToGoal === 0) return "achieved";
+  if (result.reachedGoal === true && result.monthsToGoal > 0) return "projected";
+  return "unmet";
+}
+function renderGoalResultMessage(result, targetAssets) {
+  const state = getGoalResultMessageState(result, targetAssets);
+  const definition = GOAL_RESULT_MESSAGE_DEFINITIONS[state];
+  const values = { result, targetAssets };
+  $("#goal-result-panel").dataset.state = state;
+  $("#goal-result-state-label").textContent = definition.label;
+  $("#goal-result-primary-label").textContent = definition.primaryLabel;
+  $("#goal-result-primary-value").textContent = definition.primaryValue(values);
+  $("#goal-result-secondary-label").textContent = definition.secondaryLabel;
+  $("#goal-result-secondary-value").textContent = definition.secondaryValue(values);
+  $("#goal-result-secondary-highlight").hidden = state === "achieved";
+  $("#goal-summary-detail").textContent = definition.summaryDetail(values);
+  $("#goal-summary").dataset.state = state;
+}
+function renderGoalChart(result, targetAssets) {
+  const panel = $("#goal-chart-panel");
+  const svg = $("#goal-chart");
+  const tooltip = $("#goal-chart-tooltip");
+  clearGoalChart();
+  const rawData = Array.isArray(result.simulationData) ? result.simulationData : [];
+  const simulationData = rawData.map((point, index) => {
+    const validDate = typeof point?.date === "string" && /^\d{4}-(0[1-9]|1[0-2])$/.test(point.date);
+    return Number.isInteger(point?.month) && point.month >= 0 && validDate && Number.isFinite(point.assets)
+      ? { point, index }
+      : null;
+  });
+  const validPoints = simulationData.filter(Boolean);
+  if (!validPoints.length || !Number.isFinite(targetAssets)) return;
+
+  goalSimulationChartData = rawData;
+  panel.hidden = false;
+  renderGoalAnnualReturns(rawData);
+  const width = Math.max(svg.clientWidth || 360, 300);
+  const isMobileGoalChart = window.innerWidth <= 600;
+  const height = svg.clientHeight || (isMobileGoalChart ? 270 : 330);
+  goalChartSize = {
+    width,
+    height,
+    left: isMobileGoalChart ? 72 : 82,
+    right: width - (isMobileGoalChart ? 8 : 18),
+    top: 27,
+    bottom: height - 35,
+  };
+  svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  const { left, right, top, bottom } = goalChartSize;
+  latestGoalChartRender = { result, targetAssets };
+  const startPoint = validPoints.find(({ point }) => point.month === 0)?.point || validPoints[0].point;
+  const [, startYear, startMonth] = startPoint.date.match(/^(\d{4})-(\d{2})$/);
+  const startMonthOffset = Number(startMonth) - 1;
+  const lastMonth = Math.max(0, ...validPoints.map(({ point }) => point.month));
+  const reachedMonth = result.reachedGoal && Number.isInteger(result.monthsToGoal) && result.monthsToGoal >= 0
+    ? result.monthsToGoal
+    : null;
+  const simulationEndOffset = reachedMonth === null ? lastMonth : Math.max(lastMonth, reachedMonth) + 12;
+  const xAxisLastMonth = startMonthOffset + simulationEndOffset;
+  const xFor = point => xAxisLastMonth === 0
+    ? (left + right) / 2
+    : left + (startMonthOffset + point.month) / xAxisLastMonth * (right - left);
+  const rawMin = Math.min(targetAssets, ...validPoints.map(({ point }) => point.assets));
+  const rawMax = Math.max(targetAssets, ...validPoints.map(({ point }) => point.assets));
+  const tickStep = getGoalChartTickStep(rawMin, rawMax);
+  const minValue = Math.floor(rawMin / tickStep) * tickStep;
+  const maxValue = (Math.floor(rawMax / tickStep) + 1) * tickStep;
+  const valueSpan = maxValue - minValue || 1;
+  const yFor = value => bottom - (value - minValue) / valueSpan * (bottom - top);
+  const pathSegments = [];
+  let currentSegment = [];
+  for (const entry of simulationData) {
+    if (!entry) {
+      if (currentSegment.length) pathSegments.push(currentSegment);
+      currentSegment = [];
+      continue;
+    }
+    currentSegment.push({ x: xFor(entry.point), y: yFor(entry.point.assets), point: entry.point, index: entry.index });
+  }
+  if (currentSegment.length) pathSegments.push(currentSegment);
+  const linePath = pathSegments.map(segment => segment.map((point, index) => `${index ? "L" : "M"}${point.x.toFixed(2)},${point.y.toFixed(2)}`).join(" ")).join(" ");
+  const areaPaths = pathSegments.filter(segment => segment.length > 1).map(segment => {
+    const first = segment[0], last = segment.at(-1);
+    return `${segment.map((point, index) => `${index ? "L" : "M"}${point.x.toFixed(2)},${point.y.toFixed(2)}`).join(" ")} L${last.x.toFixed(2)},${bottom} L${first.x.toFixed(2)},${bottom} Z`;
+  }).join(" ");
+  const minTickIndex = Math.floor(rawMin / tickStep);
+  const maxTickIndex = Math.floor(rawMax / tickStep) + 1;
+  const ticks = Array.from({ length: maxTickIndex - minTickIndex + 1 }, (_, index) => (minTickIndex + index) * tickStep);
+  const yAxis = ticks.map(value => {
+    const y = yFor(value);
+    return `<line class="goal-chart-gridline" x1="${left}" y1="${y.toFixed(2)}" x2="${right}" y2="${y.toFixed(2)}"/><text class="goal-chart-y-label" x="${left - 13}" y="${(y + 5).toFixed(2)}" text-anchor="end">${formatGoalChartAmount(value)}</text>`;
+  }).join("");
+  const endpointYear = Number(startYear) + Math.floor(xAxisLastMonth / 12);
+  const xLabels = [{ monthOffset: 0, year: Number(startYear) }];
+  const simulationPeriodMonths = reachedMonth === null ? lastMonth : Math.max(lastMonth, reachedMonth);
+  const baseLabelIntervalMonths = isMobileGoalChart
+    ? simulationPeriodMonths < 36 ? 12 : simulationPeriodMonths <= 72 ? 24 : 48
+    : simulationPeriodMonths < 24 ? 6 : simulationPeriodMonths <= 72 ? 12 : 24;
+  const minimumLabelSpacing = isMobileGoalChart ? 50 : 44;
+  const maxLabelIntervals = Math.max(1, Math.floor((right - left) / minimumLabelSpacing));
+  const desiredLabelIntervals = Math.ceil(xAxisLastMonth / baseLabelIntervalMonths);
+  const labelIntervalMonths = baseLabelIntervalMonths * Math.max(1, Math.ceil(desiredLabelIntervals / maxLabelIntervals));
+  for (let monthOffset = labelIntervalMonths; monthOffset <= xAxisLastMonth; monthOffset += labelIntervalMonths) {
+    const year = Number(startYear) + Math.floor(monthOffset / 12);
+    const monthWithinYear = monthOffset % 12;
+    if (reachedMonth !== null && endpointYear % 2 !== 0 && year === endpointYear && monthWithinYear === 0) continue;
+    xLabels.push({ monthOffset, year, monthWithinYear });
+  }
+  const hasEndpointYearLabel = xLabels.some(({ year }) => year === endpointYear);
+  const endpointFitsLabelCadence = !isMobileGoalChart
+    || ((endpointYear - Number(startYear)) * 12) % labelIntervalMonths === 0;
+  if (reachedMonth !== null && endpointYear % 2 === 0 && endpointFitsLabelCadence && !hasEndpointYearLabel) {
+    xLabels.push({ monthOffset: (endpointYear - Number(startYear)) * 12, year: endpointYear });
+  }
+  xLabels.sort((a, b) => a.monthOffset - b.monthOffset);
+  const xAxis = xLabels.map(({ monthOffset, year, monthWithinYear = 0 }, index) => {
+    const x = xAxisLastMonth === 0 ? (left + right) / 2 : left + monthOffset / xAxisLastMonth * (right - left);
+    const anchor = index === 0 ? "start" : index === xLabels.length - 1 ? "end" : "middle";
+    const label = monthWithinYear === 6 ? "7月" : String(year);
+    return `<text class="goal-chart-x-label" x="${x.toFixed(2)}" y="${height - 13}" text-anchor="${anchor}">${label}</text>`;
+  }).join("");
+  const goalPointData = reachedMonth !== null
+    ? rawData[result.monthsToGoal]
+    : null;
+  const goalPoint = goalPointData && Number.isFinite(goalPointData.assets)
+    ? validPoints.find(({ point, index }) => index === result.monthsToGoal && point.month === result.monthsToGoal)
+    : null;
+  const goalX = goalPoint ? xFor(goalPoint.point) : null;
+  const goalY = goalPoint ? yFor(goalPoint.point.assets) : null;
+  const goalGuide = goalPoint
+    ? `<line class="goal-chart-goal-guide" x1="${goalX.toFixed(2)}" y1="${goalY.toFixed(2)}" x2="${goalX.toFixed(2)}" y2="${bottom}"/>`
+    : "";
+  const targetY = yFor(targetAssets);
+  const stride = Math.max(1, Math.ceil(lastMonth / Math.max(1, Math.floor((right - left) / 28))));
+  const sampled = validPoints.filter(({ point, index }) => index === 0 || index === rawData.length - 1 || point.month % stride === 0 || (goalPoint && point.month === goalPoint.point.month));
+  const hits = sampled.map(({ point, index }) => {
+    const x = xFor(point), y = yFor(point.assets);
+    const date = formatGoalDate(point.date);
+    const label = `${date}、予想資産 ${formatJpyAmount(point.assets)}`;
+    return `<circle class="goal-chart-hit" cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="12" data-goal-chart-index="${index}" data-x="${x.toFixed(2)}" data-y="${y.toFixed(2)}" tabindex="0" role="button" aria-label="${label}"/>`;
+  }).join("");
+  const visibleDots = sampled.map(({ point }) => `<circle class="goal-chart-sample" cx="${xFor(point).toFixed(2)}" cy="${yFor(point.assets).toFixed(2)}" r="3.2"/>`).join("");
+  const goalMarker = goalPoint
+    ? `<circle class="goal-chart-goal-marker" cx="${goalX.toFixed(2)}" cy="${goalY.toFixed(2)}" r="8"/><text class="goal-chart-goal-label" x="${goalX > (left + right) / 2 ? goalX - 12 : goalX + 12}" y="${Math.max(top + 16, goalY - 14)}" text-anchor="${goalX > (left + right) / 2 ? "end" : "start"}">達成 ${formatGoalDate(goalPoint.point.date)}</text>`
+    : "";
+  const targetLine = `<line class="goal-chart-target" x1="${left}" y1="${targetY.toFixed(2)}" x2="${right}" y2="${targetY.toFixed(2)}"/>`;
+  svg.setAttribute("aria-label", `資産推移。目標 ${formatJpyAmount(targetAssets)}${goalPoint ? `、目標達成 ${formatGoalDate(goalPoint.point.date)}` : ""}`);
+  svg.innerHTML = `<defs><linearGradient id="goal-chart-area-gradient" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="var(--teal)" stop-opacity=".2"/><stop offset="100%" stop-color="var(--teal)" stop-opacity=".015"/></linearGradient></defs>${yAxis}${areaPaths ? `<path class="goal-chart-area" d="${areaPaths}"/>` : ""}${goalGuide}${linePath ? `<path class="goal-chart-line" d="${linePath}"/>` : ""}${validPoints.length === 1 ? `<circle class="goal-chart-single-point" cx="${xFor(validPoints[0].point).toFixed(2)}" cy="${yFor(validPoints[0].point.assets).toFixed(2)}" r="5"/>` : ""}${visibleDots}${targetLine}${goalMarker}${hits}<line class="goal-chart-x-axis" x1="${left}" y1="${bottom}" x2="${right}" y2="${bottom}"/>${xAxis}`;
+  tooltip.hidden = true;
+}
+function showGoalChartTooltip(hit) {
+  if (!hit) return;
+  const point = goalSimulationChartData[Number(hit.dataset.goalChartIndex)];
+  if (!point || !Number.isFinite(point.assets)) return;
+  const tooltip = $("#goal-chart-tooltip");
+  tooltip.replaceChildren();
+  const date = document.createElement("strong");
+  date.textContent = formatGoalDate(point.date);
+  const amount = document.createElement("span");
+  amount.textContent = `予想資産 ${formatJpyAmount(point.assets)}`;
+  tooltip.append(date, amount);
+  const svgRect = $("#goal-chart").getBoundingClientRect();
+  const chartRect = $("#goal-chart").parentElement.getBoundingClientRect();
+  const x = svgRect.left + Number(hit.dataset.x) / goalChartSize.width * svgRect.width - chartRect.left;
+  const y = svgRect.top + Number(hit.dataset.y) / goalChartSize.height * svgRect.height - chartRect.top;
+  tooltip.style.left = `${Math.max(75, Math.min(chartRect.width - 75, x))}px`;
+  tooltip.style.top = `${y < 82 ? y + 24 : y - 10}px`;
+  tooltip.classList.toggle("is-below", y < 82);
+  tooltip.hidden = false;
+}
+function renderGoalSimulationResults(result, targetAssets) {
+  const donut = $("#goal-achievement-donut");
+  const achievementRate = result.achievementRate;
+  const ringProgress = Math.min(Math.max(achievementRate, 0), 100);
+  $("#goal-result-achievement").textContent = `${achievementRate.toFixed(2)}%`;
+  donut.style.setProperty("--goal-achievement-progress", `${ringProgress}%`);
+  donut.dataset.achievementRate = String(result.achievementRate);
+  donut.setAttribute("aria-label", `目標達成率 ${result.achievementRate.toFixed(2)}%`);
+  renderGoalResultMessage(result, targetAssets);
+  $("#goal-result-panel").dataset.hasResult = "true";
+  renderGoalChart(result, targetAssets);
+}
+function runGoalSimulation(event) {
+  event.preventDefault();
+  const currentAssetsInput = $("#goal-current-assets");
+  const targetAssetsInput = $("#goal-target-assets");
+  const monthlyContributionInput = $("#goal-monthly-contribution");
+  const currentAssetsRaw = currentAssetsInput.value.trim().replaceAll(",", "");
+  const targetAssetsRaw = targetAssetsInput.value.trim().replaceAll(",", "");
+  const monthlyContributionRaw = monthlyContributionInput.value.trim().replaceAll(",", "");
+  const annualRateInput = $("#goal-annual-return").value.trim();
+  const emptyInputMessage = [
+    [currentAssetsRaw, "現在資産を入力してください。"],
+    [targetAssetsRaw, "目標資産を入力してください。"],
+    [monthlyContributionRaw, "毎月積立額を入力してください。0円の場合は0を入力してください。"],
+    [annualRateInput, "想定年利を入力してください。"]
+  ].find(([value]) => !value)?.[1];
+  if (emptyInputMessage) {
+    clearGoalSimulationResults("入力値を確認して、もう一度シミュレーションしてください。");
+    $("#goal-error").textContent = emptyInputMessage;
+    $("#goal-error").hidden = false;
+    return;
+  }
+  const currentAssets = Number(currentAssetsRaw);
+  const targetAssets = Number(targetAssetsRaw);
+  const monthlyContribution = Number(monthlyContributionRaw);
+  const annualReturnRate = annualRateInput === "" ? NaN : Number(annualRateInput);
+  const now = new Date();
+  const startDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  $("#goal-error").hidden = true;
+  $("#goal-error").textContent = "";
+  try {
+    const result = AssetGoalSimulation.calculateAssetGoalSimulation({
+      currentAssets,
+      targetAssets,
+      monthlyContribution,
+      annualReturnRate,
+      startDate
+    });
+    renderGoalSimulationResults(result, targetAssets);
+  } catch (error) {
+    clearGoalSimulationResults("入力値を確認して、もう一度シミュレーションしてください。");
+    const message = error.message || "入力値を確認してください。";
+    $("#goal-error").textContent = message.includes("targetAssets")
+      ? "目標資産は0円より大きい値を入力してください。"
+      : message.includes("currentAssets")
+        ? "現在資産は0円以上で入力してください。"
+        : message.includes("monthlyContribution")
+          ? "毎月積立額は0円以上で入力してください。"
+          : message.includes("annualReturnRate")
+            ? "想定年利は-100%より大きい値を入力してください。"
+            : "入力値を確認してください。";
+    $("#goal-error").hidden = false;
+  }
 }
 function renderAllocation(total) {
   const types = ["日本株", "米国株", "投資信託"].map(type => [type, data.holdings.filter(h => h.type === type && hasValuation(h)).reduce((n,h) => n + valueOf(h), 0)]).filter(x => x[1]);
@@ -874,15 +1330,56 @@ function renderAccounts() {
 }
 function renderAccountOptions() { const current = $("#filter-account").value; $("#filter-account").innerHTML = `<option value="all">すべての口座</option>${data.accounts.map(a=>`<option value="${a.id}">${escapeHTML(a.name)}</option>`).join("")}`; $("#filter-account").value = current; }
 function escapeHTML(s) { const d=document.createElement("div"); d.textContent=s; return d.innerHTML; }
+function formatHoldingNumericInput(value) {
+  const raw = String(value ?? "").trim().replaceAll(",", "");
+  if (!raw) return "";
+  const match = raw.match(/^(\d*)(?:\.(\d*))?$/);
+  if (!match || (!match[1] && match[2] === undefined)) return null;
+  const integer = (match[1] || "0").replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  return `${integer}${match[2] === undefined ? "" : `.${match[2]}`}`;
+}
+function parseHoldingNumericInput(value) {
+  const raw = String(value ?? "").trim().replaceAll(",", "");
+  if (!raw || !/^(?:\d+(?:\.\d*)?|\.\d+)$/.test(raw)) return null;
+  const numberValue = Number(raw);
+  return Number.isFinite(numberValue) ? numberValue : null;
+}
+function formatHoldingNumericField(field) {
+  const formatted = formatHoldingNumericInput(field.value);
+  if (formatted !== null) field.value = formatted;
+}
+function isIdecoCategory(categoryCode) { return categoryCode === "ideco"; }
+function calculateIdecoAcquisitionUnitCost(quantity, acquisitionAmount) {
+  if (!Number.isFinite(quantity) || quantity <= 0 || !Number.isFinite(acquisitionAmount) || acquisitionAmount < 0) return null;
+  const unitCost = acquisitionAmount / quantity * 10000;
+  return Number.isFinite(unitCost) ? unitCost : null;
+}
+function refreshIdecoAcquisitionUnitPreview() {
+  const preview = $("#holding-cost-calculated");
+  const ideco = isIdecoCategory($("#holding-account-category").value);
+  preview.hidden = !ideco;
+  if (!ideco) return;
+  const quantity = parseHoldingNumericInput($("#holding-quantity").value);
+  const acquisitionAmount = parseHoldingNumericInput($("#holding-cost").value);
+  const unitCost = quantity === null ? null : calculateIdecoAcquisitionUnitCost(quantity, acquisitionAmount);
+  const formatted = unitCost === null ? null : new Intl.NumberFormat("ja-JP", { maximumFractionDigits: 2 }).format(unitCost);
+  preview.textContent = `取得単価（自動計算）：${formatted === null ? "—" : `${formatted}円`}`;
+}
 function updateHoldingFormLabels() {
   const type = $("#holding-type").value;
-  const isFund = type === "投資信託";
+  const ideco = isIdecoCategory($("#holding-account-category").value);
+  if (ideco) $("#holding-type").value = "投資信託";
+  $("#holding-type").disabled = ideco;
+  const isFund = ideco || type === "投資信託";
   $("#quantity-label").textContent = isFund ? "保有口数" : "保有数量";
-  $("#cost-label").textContent = isFund ? "取得基準価額（1万口あたり）" : "取得単価";
+  $("#cost-label").textContent = ideco ? "取得金額（円）" : isFund ? "取得基準価額（1万口あたり）" : "取得単価";
   $("#holding-quantity").placeholder = isFund ? "例：150000" : "例：100";
-  $("#holding-cost").placeholder = isFund ? "例：10000" : "例：2500";
-  $("#holding-symbol").placeholder = isFund ? "例：03311187" : type === "日本株" ? "例：7203 / 563A" : "例：AAPL";
+  $("#holding-cost").placeholder = ideco ? "例：273948" : isFund ? "例：10000" : "例：2500";
+  $("#holding-symbol").placeholder = isFund ? "例：9I311181" : type === "日本株" ? "例：7203 / 563A" : "例：AAPL";
+  $("#holding-symbol-label").textContent = isFund ? "投信コード" : "Yahoo Finance ティッカー";
+  $("#holding-symbol-help").textContent = isFund ? "半角英数字8文字。銘柄名・基準価額を取得します。" : "このティッカーで価格を自動取得します";
   $("#fund-unit-note").hidden = !isFund;
+  refreshIdecoAcquisitionUnitPreview();
 }
 function openHolding(id) {
   const h=data.holdings.find(x=>x.id===id); $("#holding-form").reset(); $("#holding-id").value=id||""; $("#holding-dialog-title").textContent=h?"保有資産を編集":"保有資産を追加"; $("#holding-form-kicker").textContent=h?"EDIT HOLDING":"NEW HOLDING"; $("#holding-account").innerHTML=data.accounts.map(a=>`<option value="${a.id}">${escapeHTML(a.name)}</option>`).join("");
@@ -890,12 +1387,13 @@ function openHolding(id) {
   categorySelect.replaceChildren(...(data.accountCategories || []).map(category => new Option(category.label, category.code)));
   if (!categorySelect.options.length) categorySelect.add(new Option("口座区分を取得できません", ""));
   categorySelect.value = h?.accountCategoryCode || "unassigned";
-  if(h){ $("#holding-account").value=h.accountId; $("#holding-type").value=h.type; $("#holding-currency").value=h.currency; $("#holding-name").value=h.name; $("#holding-symbol").value=displaySymbol(h.type, h.symbol); $("#holding-quantity").value=h.quantity; $("#holding-cost").value=h.cost; } $("#name-lookup-status").textContent=""; updateHoldingFormLabels(); $("#holding-dialog").showModal();
+  if(h){ $("#holding-account").value=h.accountId; $("#holding-type").value=h.type; $("#holding-currency").value=h.currency; $("#holding-name").value=h.name; $("#holding-symbol").value=displaySymbol(h.type, h.symbol); $("#holding-quantity").value=h.quantity; $("#holding-cost").value=h.cost; } $("#name-lookup-status").textContent=""; $("#holding-input-error").hidden=true; $("#holding-input-error").textContent=""; updateHoldingFormLabels(); if(h && isIdecoCategory(categorySelect.value)) $("#holding-cost").value = h.cost * h.quantity / 10000; formatHoldingNumericField($("#holding-quantity")); formatHoldingNumericField($("#holding-cost")); refreshIdecoAcquisitionUnitPreview(); $("#holding-dialog").showModal();
 }
 function openAccount(id) { const a=data.accounts.find(x=>x.id===id); $("#account-form").reset(); $("#account-id").value=id||""; $("#account-dialog-title").textContent=a?"証券口座を編集":"証券口座を追加"; $("#account-form-kicker").textContent=a?"EDIT ACCOUNT":"NEW ACCOUNT"; if(a){$("#account-name").value=a.name;$("#account-note").value=a.note} $("#account-dialog").showModal(); }
 async function lookupHoldingName() {
   const button = $("#lookup-name"), status = $("#name-lookup-status");
   const type = $("#holding-type").value;
+  if (type === "投資信託") $("#holding-symbol").value = $("#holding-symbol").value.toUpperCase();
   const symbol = normalizeStoredSymbol(type, $("#holding-symbol").value.toUpperCase());
   if (!symbol) { status.textContent = "先に銘柄コードを入力してください"; return; }
   button.disabled = true; status.textContent = "取得中…";
@@ -946,8 +1444,8 @@ async function updateAll() {
   data.lastQuoteFetchedAt=Date.now();
   try {
     await persistState(previousData, { quoteFailureCount: errors.length + Number(fxQuoteFailed) });
-    await loadAssetTrend({ refresh: true });
-    if(errors.length) $("#quote-status").textContent=`価格を取得できませんでした：${errors.join("、")}。投信は8桁の投信コードを入力してください。`;
+    await Promise.all([loadAssetTrend({ refresh: true }), loadMarketWeather()]);
+    if(errors.length) $("#quote-status").textContent=`価格を取得できませんでした：${errors.join("、")}。投信は半角英数字8文字の投信コードを入力してください。`;
   } catch { /* persistState restores the last confirmed state and shows the error. */ }
   finally {button.disabled=false;button.innerHTML="↻ <span>価格を更新</span>";}
 }
@@ -1042,15 +1540,19 @@ function showAppView(viewName) {
   document.querySelectorAll(".nav-item").forEach(item => item.classList.toggle("active", item.dataset.view === selectedNavView));
   document.querySelectorAll(".view").forEach(item => item.classList.toggle("active", item === view));
   $("#page-title").textContent = {
-    dashboard: "資産の全体像", holdings: "保有資産", accounts: "証券口座", heatmap: "資産ヒートマップ", trend: "資産推移", "version-history": "バージョン履歴"
+    dashboard: "資産の全体像", holdings: "保有資産", accounts: "証券口座", heatmap: "資産ヒートマップ", trend: "資産推移", goal: "資産目標シミュレーション", "version-history": "バージョン履歴"
   }[viewName];
+  if (viewName === "goal") {
+    const currentAssetsInput = $("#goal-current-assets");
+    if (!currentAssetsInput.dataset.userEdited) currentAssetsInput.value = jpyNumber.format(Math.round(getCurrentTotalAssets()));
+  }
   if (viewName === "dashboard" && snapshotResponseCache) renderAssetTrend(snapshotResponseCache);
   if (viewName === "trend") {
     renderTrendDetailAccountOptions();
     if (snapshotResponseCache) renderAssetTrendDetail(snapshotResponseCache);
     else void loadAssetTrend();
   }
-  if (viewName === "heatmap" || viewName === "trend" || viewName === "version-history") window.scrollTo(0, 0);
+  if (viewName === "heatmap" || viewName === "trend" || viewName === "goal" || viewName === "version-history") window.scrollTo(0, 0);
 }
 
 function showTrendPointTooltip(point) {
@@ -1061,6 +1563,11 @@ function showTrendPointTooltip(point) {
 }
 
 document.addEventListener("click", e => {
+  const goalRate = e.target.closest("[data-goal-rate]");
+  if (goalRate) {
+    $("#goal-annual-return").value = goalRate.dataset.goalRate;
+    $("#goal-error").hidden = true;
+  }
   const trendRange = e.target.closest("[data-trend-range]");
   if (trendRange) {
     selectedAssetTrendRange = trendRange.dataset.trendRange;
@@ -1101,10 +1608,72 @@ trendDetailChart.addEventListener("pointerleave", event => { if (event.pointerTy
 trendDetailChart.addEventListener("focusin", event => showTrendPointTooltip(event.target.closest?.(".trend-detail-hit")));
 trendDetailChart.addEventListener("focusout", () => { $("#trend-detail-tooltip").hidden = true; });
 trendDetailChart.addEventListener("click", event => showTrendPointTooltip(event.target.closest?.(".trend-detail-hit")));
+const goalChart = $("#goal-chart");
+goalChart.addEventListener("pointerover", event => showGoalChartTooltip(event.target.closest?.(".goal-chart-hit")));
+goalChart.addEventListener("pointerleave", event => { if (event.pointerType !== "touch") $("#goal-chart-tooltip").hidden = true; });
+goalChart.addEventListener("focusin", event => showGoalChartTooltip(event.target.closest?.(".goal-chart-hit")));
+goalChart.addEventListener("focusout", () => { $("#goal-chart-tooltip").hidden = true; });
+goalChart.addEventListener("click", event => showGoalChartTooltip(event.target.closest?.(".goal-chart-hit")));
+let goalChartResizeTimer = null;
+window.addEventListener("resize", () => {
+  if (!latestGoalChartRender) return;
+  clearTimeout(goalChartResizeTimer);
+  goalChartResizeTimer = setTimeout(() => {
+    if (latestGoalChartRender) renderGoalChart(latestGoalChartRender.result, latestGoalChartRender.targetAssets);
+  }, 120);
+});
+$("#asset-goal-form").addEventListener("submit", runGoalSimulation);
+$("#asset-goal-form").addEventListener("input", event => {
+  if (event.target.id === "goal-current-assets") event.target.dataset.userEdited = "true";
+  $("#goal-error").hidden = true;
+});
+["#goal-current-assets", "#goal-target-assets", "#goal-monthly-contribution"].forEach(selector => {
+  $(selector).addEventListener("blur", event => {
+    const raw = event.target.value.trim().replaceAll(",", "");
+    const amount = raw === "" ? NaN : Number(raw);
+    if (Number.isFinite(amount)) event.target.value = goalInputNumber.format(amount);
+  });
+});
 $("#holding-form").addEventListener("submit",async e=>{
   e.preventDefault();
+  const type = $("#holding-type").value;
+  const symbolField = $("#holding-symbol");
+  const ideco = isIdecoCategory($("#holding-account-category").value);
+  if (ideco && type !== "投資信託") {
+    $("#holding-input-error").textContent = "iDeCo口座では投資信託のみ登録できます。";
+    $("#holding-input-error").hidden = false;
+    return;
+  }
+  if (type === "投資信託" || ideco) {
+    symbolField.value = symbolField.value.toUpperCase();
+    if (!/^[A-Z0-9]{8}$/.test(symbolField.value.trim())) {
+      $("#name-lookup-status").textContent = "投信コードは半角英数字8文字で入力してください。";
+      return;
+    }
+  }
+  const quantity = parseHoldingNumericInput($("#holding-quantity").value);
+  const enteredCost = parseHoldingNumericInput($("#holding-cost").value);
+  const inputError = $("#holding-input-error");
+  if (quantity === null || quantity <= 0) {
+    inputError.textContent = "保有数量は0より大きい数値で入力してください。";
+    inputError.hidden = false;
+    return;
+  }
+  if (enteredCost === null || enteredCost < 0) {
+    inputError.textContent = ideco ? "取得金額は0円以上の数値で入力してください。" : "取得単価は0以上の数値で入力してください。";
+    inputError.hidden = false;
+    return;
+  }
+  const cost = ideco ? calculateIdecoAcquisitionUnitCost(quantity, enteredCost) : enteredCost;
+  if (cost === null) {
+    inputError.textContent = "保有数量と取得金額を確認してください。";
+    inputError.hidden = false;
+    return;
+  }
+  inputError.hidden = true;
+  inputError.textContent = "";
   const previousData=cloneData(data), id=$("#holding-id").value;
-  const h={id:id||generateId(),accountId:$("#holding-account").value,accountCategoryCode:$("#holding-account-category").value,type:$("#holding-type").value,currency:$("#holding-currency").value,name:$("#holding-name").value.trim(),symbol:normalizeStoredSymbol($("#holding-type").value,$("#holding-symbol").value.toUpperCase()),quantity:Number($("#holding-quantity").value),cost:Number($("#holding-cost").value)};
+  const h={id:id||generateId(),accountId:$("#holding-account").value,accountCategoryCode:$("#holding-account-category").value,type,currency:$("#holding-currency").value,name:$("#holding-name").value.trim(),symbol:normalizeStoredSymbol(type,$("#holding-symbol").value.toUpperCase()),quantity,cost};
   if (!h.symbol) { $("#name-lookup-status").textContent = "銘柄コードを入力してください。"; return; }
   const old=data.holdings.findIndex(x=>x.id===id);
   const previous = old >= 0 ? data.holdings[old] : null;
@@ -1133,6 +1702,20 @@ $("#account-form").addEventListener("submit",async e=>{
   catch { /* Keep the dialog open so the user can retry or reapply after a conflict. */ }
 });
 $("#filter-account").addEventListener("change",renderHoldingsTable);$("#filter-type").addEventListener("change",renderHoldingsTable);$("#holding-type").addEventListener("change",updateHoldingFormLabels);$("#refresh-all").addEventListener("click",updateAll);$("#lookup-name").addEventListener("click",lookupHoldingName);
+$("#holding-account").addEventListener("change", updateHoldingFormLabels);
+$("#holding-account-category").addEventListener("change", updateHoldingFormLabels);
+$("#holding-symbol").addEventListener("blur", event => {
+  if ($("#holding-type").value === "投資信託") event.target.value = event.target.value.toUpperCase();
+});
+["#holding-quantity", "#holding-cost"].forEach(selector => {
+  const field = $(selector);
+  field.addEventListener("focus", () => { field.value = field.value.replaceAll(",", ""); });
+  field.addEventListener("blur", () => {
+    formatHoldingNumericField(field);
+    refreshIdecoAcquisitionUnitPreview();
+  });
+  field.addEventListener("input", () => { $("#holding-input-error").hidden = true; });
+});
 $("#trend-detail-account").addEventListener("change", event => {
   selectedTrendDetailAccountId = event.target.value;
   if (snapshotResponseCache) renderAssetTrendDetail(snapshotResponseCache);
@@ -1166,6 +1749,7 @@ async function boot() {
   }
   $("#today").textContent=new Date().toLocaleDateString("ja-JP",{year:"numeric",month:"long",day:"numeric",weekday:"short"}).toUpperCase();
   render();
+  void loadMarketWeather();
   await loadServerState();
   await loadAssetTrend();
 }
