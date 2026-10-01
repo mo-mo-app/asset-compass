@@ -2,6 +2,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { DatabaseSync } = require("node:sqlite");
 const { normalizeStoredSymbol, sameHoldingSlot } = require("./symbols");
+const HoldingNumberRules = require("./holding-number-rules");
 
 const databasePath = process.env.ASSET_COMPASS_DB_PATH || path.join(__dirname, "data", "asset-compass.sqlite");
 fs.mkdirSync(path.dirname(databasePath), { recursive: true });
@@ -222,7 +223,7 @@ function requiredText(value, fieldName) {
   return value.trim();
 }
 
-function normalizeState(input, existingCategories = new Map()) {
+function normalizeState(input, existingCategories = new Map(), existingHoldings = null) {
   if (!input || typeof input !== "object" || !Array.isArray(input.accounts) || !Array.isArray(input.holdings)) {
     throw new Error("State must contain accounts and holdings arrays.");
   }
@@ -249,6 +250,24 @@ function normalizeState(input, existingCategories = new Map()) {
     if (!["JPY", "USD"].includes(currency)) throw new Error(`${field}.currency is invalid.`);
     if (typeof holding?.quantity !== "number" || !Number.isFinite(holding.quantity) || holding.quantity <= 0) throw new Error(`${field}.quantity must be greater than zero.`);
     if (typeof holding?.cost !== "number" || !Number.isFinite(holding.cost) || holding.cost < 0) throw new Error(`${field}.cost must be zero or greater.`);
+    if (existingHoldings) {
+      const context = { ...holding, type, currency, accountCategoryCode, symbol: normalizeStoredSymbol(type, holding.symbol).toUpperCase() };
+      const previous = existingHoldings.get(id);
+      for (const numericField of ["quantity", "cost"]) {
+        const result = HoldingNumberRules.validateStored(holding[numericField], context, numericField, previous);
+        if (result.error) throw new Error(`${field}.${numericField}: ${result.error}`);
+      }
+      if (accountCategoryCode === "ideco") {
+        const unchangedPair = previous &&
+          HoldingNumberRules.sameMeaning(previous, context, "quantity") &&
+          HoldingNumberRules.sameMeaning(previous, context, "cost") &&
+          previous.quantity === holding.quantity && previous.cost === holding.cost;
+        if (!unchangedPair) {
+          const result = HoldingNumberRules.validateIdecoAcquisitionAmount(holding.quantity, holding.cost);
+          if (result.error) throw new Error(`${field}.cost: ${result.error}`);
+        }
+      }
+    }
     const accountId = requiredText(holding?.accountId, `${field}.accountId`);
     if (!accountIds.has(accountId)) throw new Error(`${field}.accountId does not match an account in this state.`);
     const price = optionalNumber(holding.price, `${field}.price`);
@@ -476,6 +495,7 @@ function saveDailySnapshot(data, { quoteFailureCount }) {
 }
 
 function migrateLocalState(input) {
+  // One-time import preserves legacy numeric precision; subsequent edits use saveState validation.
   const data = normalizeState(input);
   return inTransaction(() => {
     const current = db.prepare("SELECT revision, initialized FROM app_state WHERE singleton_id = 1").get();
@@ -496,11 +516,11 @@ function saveState(expectedRevision, input, snapshotMetadata = null) {
     if (!current.initialized) return { notInitialized: true, state: getState() };
     if (current.revision !== expectedRevision) return { conflict: true, state: getState() };
     const existingHoldings = db.prepare(`
-      SELECT id, account_id AS accountId, account_category_code AS accountCategoryCode, type, symbol FROM holdings
+      SELECT id, account_id AS accountId, account_category_code AS accountCategoryCode, type, currency, symbol, quantity, cost FROM holdings
     `).all();
     const existingCategories = new Map(existingHoldings.map(row => [row.id, row.accountCategoryCode]));
-    const data = normalizeState(input, existingCategories);
-    const existingById = new Map(existingHoldings.map(holding => [holding.id, holding]));
+    const existingById = new Map(existingHoldings.map(holding => [holding.id, { ...holding, symbol: normalizeStoredSymbol(holding.type, holding.symbol).toUpperCase() }]));
+    const data = normalizeState(input, existingCategories, existingById);
     const submittedIds = new Set(data.holdings.map(holding => holding.id));
     const effectiveHoldings = data.holdings.concat(existingHoldings.filter(holding => !submittedIds.has(holding.id)));
     for (const holding of data.holdings) {

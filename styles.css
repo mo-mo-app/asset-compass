@@ -3,7 +3,9 @@
 #holding-dialog #holding-account,#holding-dialog #holding-account-category{margin-left:12px}
 .holding-quantity{display:none}
 .holding-cost-calculated[hidden]{display:none}
-.form-validation-error{color:var(--red);font-size:11px;min-height:1em;margin-top:-7px}
+.form-validation-error{color:var(--red);font-size:11px;min-height:1em;margin-top:-7px;white-space:pre-line}
+#holding-form input[data-cleared="true"]{background:#fff0f3;border-color:#e4c5cc}
+#holding-form input[data-invalid="true"]{background:#fff0f3;border-color:#e4aab5}
 .holding-pc-quantity,.holding-meta-type{display:none}
 #holdings-view .holdings-account-heading{margin:22px 0 0;padding-bottom:9px;border-bottom:1px solid var(--line);font-size:16px;letter-spacing:-.03em}
 #holdings-view .table-head + .holdings-account-heading{margin-top:12px}
@@ -654,4 +656,7 @@
   #dashboard-view .grid-two > section:first-child .panel-heading{margin-bottom:10px}
   #dashboard-view #account-summary .account-summary-row{padding-top:11px;padding-bottom:11px}
   #dashboard-view #account-summary .account-summary-row:first-child{padding-top:0}
+}
+@media(max-width:600px){
+  #holding-input-error{white-space:normal}
 }

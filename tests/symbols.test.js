@@ -26,8 +26,8 @@ function appContext(holdings) {
   const elements = new Map();
   const element = selector => {
     if (!elements.has(selector)) elements.set(selector, {
-      value: "", textContent: "", innerHTML: "", options: [],
-      reset() {}, showModal() {},
+      value: "", textContent: "", innerHTML: "", options: [], dataset: {},
+      reset() {}, showModal() { this.open = true; }, close() { this.open = false; },
       replaceChildren(...options) { this.options = options; },
       add(option) { this.options.push(option); }
     });
@@ -60,6 +60,7 @@ function appContext(holdings) {
     }
   });
   vm.runInContext(fs.readFileSync(path.join(root, "symbols.js"), "utf8"), context);
+  vm.runInContext(fs.readFileSync(path.join(root, "holding-number-rules.js"), "utf8"), context);
   const source = fs.readFileSync(path.join(root, "app.js"), "utf8");
   vm.runInContext(source.slice(0, source.indexOf('document.addEventListener("click"')), context);
   return { context, element, requested };

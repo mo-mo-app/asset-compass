@@ -12,7 +12,7 @@ function appContext(fetch = async () => { throw new Error("offline"); }) {
   const elements = new Map();
   const element = selector => {
     if (!elements.has(selector)) elements.set(selector, {
-      textContent: "", innerHTML: "", className: "", hidden: false,
+      value: "", textContent: "", innerHTML: "", className: "", hidden: false,
       attributes: new Set(),
       setAttribute(name) { this.attributes.add(name); },
       toggleAttribute(name, enabled) { if (enabled) this.attributes.add(name); else this.attributes.delete(name); },
@@ -34,6 +34,7 @@ function appContext(fetch = async () => { throw new Error("offline"); }) {
     }
   });
   vm.runInContext(fs.readFileSync(path.join(root, "symbols.js"), "utf8"), context);
+  vm.runInContext(fs.readFileSync(path.join(root, "holding-number-rules.js"), "utf8"), context);
   const source = fs.readFileSync(path.join(root, "app.js"), "utf8");
   vm.runInContext(source.slice(0, source.indexOf('document.addEventListener("click"')), context);
   return { context, element };

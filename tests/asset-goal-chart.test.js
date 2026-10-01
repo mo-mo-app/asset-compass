@@ -11,7 +11,7 @@ function goalChartContext(innerWidth = 1280) {
   const elements = new Map();
   const element = selector => {
     if (!elements.has(selector)) elements.set(selector, {
-      textContent: "", innerHTML: "", hidden: false, dataset: {}, style: {}, clientWidth: 360, clientHeight: innerWidth <= 600 ? 270 : 330,
+      textContent: "", innerHTML: "", hidden: false, dataset: {}, style: { setProperty() {} }, clientWidth: 360, clientHeight: innerWidth <= 600 ? 270 : 330,
       attributes: new Map(),
       setAttribute(name, value) { this.attributes.set(name, value); },
       replaceChildren() { this.innerHTML = ""; }
@@ -24,6 +24,7 @@ function goalChartContext(innerWidth = 1280) {
     document: { querySelector: element }
   });
   vm.runInContext(fs.readFileSync(path.join(root, "symbols.js"), "utf8"), context);
+  vm.runInContext(fs.readFileSync(path.join(root, "holding-number-rules.js"), "utf8"), context);
   const source = fs.readFileSync(path.join(root, "app.js"), "utf8");
   vm.runInContext(source.slice(0, source.indexOf('document.addEventListener("click"')), context);
   return { context, element };
@@ -48,10 +49,15 @@ test("standard goal simulation draws asset and target lines with the exact goal 
   assert.match(element("#goal-chart").innerHTML, /class="goal-chart-target"/);
   assert.match(element("#goal-chart").innerHTML, /class="goal-chart-goal-marker"/);
   assert.match(element("#goal-chart").innerHTML, /達成 2036年4月/);
-  assert.match(element("#goal-chart").innerHTML, /text-anchor="start">目標 1億円/);
+  assert.doesNotMatch(element("#goal-chart").innerHTML, />目標 1億円<\/text>/, "the target amount is not shown as a visible chart label");
+  assert.match(element("#goal-chart").attributes.get("aria-label"), /目標 100,000,000円/);
   const yAxisLabels = Array.from(element("#goal-chart").innerHTML.matchAll(/<text class="goal-chart-y-label"[^>]*>(.*?)<\/text>/g), match => match[1]);
+  const minAssets = Math.min(baseInput.targetAssets, ...result.simulationData.map(point => point.assets));
   const maxAssets = Math.max(baseInput.targetAssets, ...result.simulationData.map(point => point.assets));
-  assert.equal(yAxisLabels.at(-1), context.formatGoalChartAmount(maxAssets * 1.08));
+  const tickStep = context.getGoalChartTickStep(minAssets, maxAssets);
+  const expectedAxisMaximum = (Math.floor(maxAssets / tickStep) + 1) * tickStep;
+  assert.equal(yAxisLabels.at(-1), context.formatGoalChartAmount(expectedAxisMaximum));
+  assert.ok(yAxisLabels.length <= 7, "Y-axis labels stay within the current maximum tick count");
   assert.notEqual(yAxisLabels.at(-1), context.formatGoalChartAmount(baseInput.targetAssets), "top tick leaves visible headroom above the target line");
   assert.match(element("#goal-chart").innerHTML, /data-goal-chart-index="115"/);
   assert.match(element("#goal-chart").attributes.get("aria-label"), /2036年4月/);
@@ -79,8 +85,9 @@ test("recalculation replaces the old chart and uses the new target amount", () =
   context.renderGoalChart(nextResult, nextInput.targetAssets);
   const nextSvg = element("#goal-chart").innerHTML;
   const nextLine = nextSvg.match(/<path class="goal-chart-line" d="([^"]+)"/)[1];
-  assert.match(nextSvg, /目標 7,500万円/);
-  assert.doesNotMatch(nextSvg, /目標 1億円/);
+  assert.doesNotMatch(nextSvg, />目標 (?:7,500万円|1億円)<\/text>/, "target amounts are not shown as visible chart labels");
+  assert.match(element("#goal-chart").attributes.get("aria-label"), /目標 75,000,000円/);
+  assert.doesNotMatch(element("#goal-chart").attributes.get("aria-label"), /目標 100,000,000円/);
   assert.notEqual(nextLine, previousLine);
 });
 

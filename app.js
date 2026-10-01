@@ -936,9 +936,8 @@ function renderAssetHeatmapDetail(groups) {
   container.className = "heatmap-detail-content";
   container.innerHTML = `${tiles}${unvalued}`;
 }
-const holdingQuantityNumber = new Intl.NumberFormat("ja-JP", { maximumSignificantDigits: 21 });
 function formatHoldingQuantity(h) {
-  return Number.isFinite(h.quantity) ? holdingQuantityNumber.format(h.quantity) + (h.type === "投資信託" ? " 口" : " 株") : "—";
+  return Number.isFinite(h.quantity) ? HoldingNumberRules.format(h.quantity) + (h.type === "投資信託" ? " 口" : " 株") : "—";
 }
 function renderHoldingMeta(h) {
   return escapeHTML(displaySymbol(h.type, h.symbol)) + " · " + escapeHTML(account(h.accountId)?.name || "—") + '<span class="holding-meta-type"> · ' + escapeHTML(h.type) + '</span>';
@@ -954,7 +953,7 @@ function holdingRow(h, compact = false) {
   const marketDate = h.type === "投資信託" ? formatFundDate(h.priceDate) : formatDateTime(h.priceTimestamp);
   const marketLabel = h.type === "投資信託" ? "基準日" : "価格日時";
   const quantityLabel = h.type === "投資信託" ? "保有口数" : "保有数量";
-  return `<div class="holding-row"><div class="holding-identity"><div class="holding-name">${escapeHTML(h.name)}</div><div class="holding-meta">${renderHoldingMeta(h)}</div>${marketDate ? `<div class="holding-updated">${marketLabel} ${marketDate}</div>` : ""}</div><div class="holding-cell optional holding-current"><small>現在値</small><span class="money">${hasQuote(h) ? formatHoldingPrice(h) : "未取得"}</span></div><div class="holding-cell holding-pc-quantity"><small>保有数</small><span class="money">${formatHoldingQuantity(h)}</span></div><div class="holding-cell holding-value ${compact ? 'hide-mobile' : ''}"><small>評価額</small><span class="money">${value !== null ? formatJpyAmount(value) : "—"}</span></div><div class="holding-cell optional holding-gain" data-known="${gain !== null}"><small>評価損益</small><span class="gain ${gainClass(gain || 0)}">${gain !== null ? signed(gain) : "—"}</span></div><div class="holding-cell optional holding-rate"><small>評価損益率</small>${renderHoldingRateBadge(rate)}</div><div class="holding-cell holding-type ${compact ? 'hide-mobile' : ''}"><small>資産区分</small><span>${h.type}</span></div><button class="icon-button holding-menu" data-edit-holding="${h.id}" aria-label="編集">⋮</button><div class="holding-cell holding-quantity"><small>${quantityLabel}</small><span>${number.format(h.quantity)}</span></div></div>`;
+  return `<div class="holding-row"><div class="holding-identity"><div class="holding-name">${escapeHTML(h.name)}</div><div class="holding-meta">${renderHoldingMeta(h)}</div>${marketDate ? `<div class="holding-updated">${marketLabel} ${marketDate}</div>` : ""}</div><div class="holding-cell optional holding-current"><small>現在値</small><span class="money">${hasQuote(h) ? formatHoldingPrice(h) : "未取得"}</span></div><div class="holding-cell holding-pc-quantity"><small>保有数</small><span class="money">${formatHoldingQuantity(h)}</span></div><div class="holding-cell holding-value ${compact ? 'hide-mobile' : ''}"><small>評価額</small><span class="money">${value !== null ? formatJpyAmount(value) : "—"}</span></div><div class="holding-cell optional holding-gain" data-known="${gain !== null}"><small>評価損益</small><span class="gain ${gainClass(gain || 0)}">${gain !== null ? signed(gain) : "—"}</span></div><div class="holding-cell optional holding-rate"><small>評価損益率</small>${renderHoldingRateBadge(rate)}</div><div class="holding-cell holding-type ${compact ? 'hide-mobile' : ''}"><small>資産区分</small><span>${h.type}</span></div><button class="icon-button holding-menu" data-edit-holding="${h.id}" aria-label="編集">⋮</button><div class="holding-cell holding-quantity"><small>${quantityLabel}</small><span>${HoldingNumberRules.format(h.quantity) ?? "—"}</span></div></div>`;
 }
 function dashboardHoldingRow(h) {
   const value = valueOf(h), cost = costOf(h);
@@ -1330,25 +1329,109 @@ function renderAccounts() {
 }
 function renderAccountOptions() { const current = $("#filter-account").value; $("#filter-account").innerHTML = `<option value="all">すべての口座</option>${data.accounts.map(a=>`<option value="${a.id}">${escapeHTML(a.name)}</option>`).join("")}`; $("#filter-account").value = current; }
 function escapeHTML(s) { const d=document.createElement("div"); d.textContent=s; return d.innerHTML; }
-function formatHoldingNumericInput(value) {
-  const raw = String(value ?? "").trim().replaceAll(",", "");
-  if (!raw) return "";
-  const match = raw.match(/^(\d*)(?:\.(\d*))?$/);
-  if (!match || (!match[1] && match[2] === undefined)) return null;
-  const integer = (match[1] || "0").replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-  return `${integer}${match[2] === undefined ? "" : `.${match[2]}`}`;
-}
-function parseHoldingNumericInput(value) {
-  const raw = String(value ?? "").trim().replaceAll(",", "");
-  if (!raw || !/^(?:\d+(?:\.\d*)?|\.\d+)$/.test(raw)) return null;
-  const numberValue = Number(raw);
-  return Number.isFinite(numberValue) ? numberValue : null;
-}
+function formatHoldingNumericInput(value) { return HoldingNumberRules.format(value); }
 function formatHoldingNumericField(field) {
   const formatted = formatHoldingNumericInput(field.value);
   if (formatted !== null) field.value = formatted;
 }
 function isIdecoCategory(categoryCode) { return categoryCode === "ideco"; }
+function normalizeIdecoAcquisitionAmount(value) {
+  return Number.isFinite(value) && value >= 0 ? Math.round(value) : null;
+}
+let holdingEditState = null;
+let holdingLookupRequest = 0;
+let holdingFieldErrors = { quantity: "", cost: "", form: "" };
+function renderHoldingInputErrors() {
+  const messages = [holdingFieldErrors.form, holdingFieldErrors.quantity, holdingFieldErrors.cost].filter(Boolean);
+  const element = $("#holding-input-error");
+  element.textContent = messages.join("\n");
+  element.hidden = messages.length === 0;
+}
+function setHoldingFieldError(field, message) {
+  holdingFieldErrors[field] = message || "";
+  const selector = field === "quantity" ? "#holding-quantity" : "#holding-cost";
+  if (message) $(selector).dataset.invalid = "true";
+  else delete $(selector).dataset.invalid;
+  renderHoldingInputErrors();
+}
+function clearHoldingFieldError(field) { setHoldingFieldError(field, ""); }
+function holdingFormContext() {
+  const type = $("#holding-type").value;
+  return { type, currency: $("#holding-currency").value,
+    accountCategoryCode: $("#holding-account-category").value,
+    symbol: normalizeStoredSymbol(type, $("#holding-symbol").value.toUpperCase()) };
+}
+function showHoldingInputError(message, invalidField = null) {
+  if (invalidField) {
+    const field = invalidField === "#holding-quantity" ? "quantity" : "cost";
+    setHoldingFieldError(field, message || "");
+    holdingFieldErrors.form = "";
+  } else if (message) {
+    holdingFieldErrors.form = message;
+  } else {
+    holdingFieldErrors = { quantity: "", cost: "", form: "" };
+    delete $("#holding-quantity").dataset.invalid;
+    delete $("#holding-cost").dataset.invalid;
+  }
+  renderHoldingInputErrors();
+}
+function clearHoldingInput(selector) {
+  const field = $(selector);
+  if (field.value.trim() !== "") field.dataset.cleared = "true";
+  field.value = "";
+}
+function clearHoldingNumbers(message, costOnly = false) {
+  if (!costOnly) clearHoldingInput("#holding-quantity");
+  clearHoldingInput("#holding-cost");
+  if (!costOnly) clearHoldingFieldError("quantity");
+  clearHoldingFieldError("cost");
+  if (holdingEditState) {
+    if (!costOnly) holdingEditState.originalQuantity = undefined;
+    holdingEditState.originalCost = undefined;
+  }
+  showHoldingInputError(message);
+  refreshIdecoAcquisitionUnitPreview();
+}
+function validateHoldingField(field) {
+  const context = holdingFormContext();
+  const original = field === "quantity" ? holdingEditState?.originalQuantity : holdingEditState?.originalCost;
+  const unchanged = HoldingNumberRules.sameMeaning(holdingEditState?.original, context, field) &&
+    !(field === "cost" && isIdecoCategory(context.accountCategoryCode)) ? original : undefined;
+  return HoldingNumberRules.validate($(field === "quantity" ? "#holding-quantity" : "#holding-cost").value, context, field, unchanged);
+}
+function rememberHoldingClassification() {
+  const context = holdingFormContext();
+  if (holdingEditState) holdingEditState.classification = context;
+}
+function handleHoldingClassificationChange() {
+  const previous = holdingEditState?.classification;
+  // iDeCo still fixes the asset type to mutual funds.
+  updateHoldingFormLabels();
+  const current = holdingFormContext();
+  if (previous && (previous.type !== current.type || isIdecoCategory(previous.accountCategoryCode) !== isIdecoCategory(current.accountCategoryCode))) {
+    clearHoldingNumbers("資産区分・口座区分が変更されたため、保有数量と取得値をクリアしました。\n新しい区分の値を入力してください。");
+  } else if (previous && previous.currency !== current.currency) {
+    clearHoldingNumbers("通貨が変更されたため、取得値をクリアしました。\n新しい通貨の値を入力してください。", true);
+  }
+  rememberHoldingClassification();
+}
+function handleHoldingAccountCategoryChange() { handleHoldingClassificationChange(); }
+function sameHoldingIdentity(left, right) {
+  return Boolean(left && right && left.type === right.type && left.symbol === right.symbol);
+}
+function confirmHoldingSymbolChange(confirmedIdentity = holdingFormContext()) {
+  if (!holdingEditState) return false;
+  const identity = { type: confirmedIdentity.type, symbol: confirmedIdentity.symbol };
+  if (!holdingEditState.confirmedIdentity) {
+    holdingEditState.confirmedIdentity = identity;
+    return false;
+  }
+  if (sameHoldingIdentity(holdingEditState.confirmedIdentity, identity)) return false;
+  clearHoldingInput("#holding-name");
+  clearHoldingNumbers("銘柄が変更されたため、銘柄名・保有数量・取得値をクリアしました。\n新しい銘柄の値を入力してください。");
+  holdingEditState.confirmedIdentity = identity;
+  return true;
+}
 function calculateIdecoAcquisitionUnitCost(quantity, acquisitionAmount) {
   if (!Number.isFinite(quantity) || quantity <= 0 || !Number.isFinite(acquisitionAmount) || acquisitionAmount < 0) return null;
   const unitCost = acquisitionAmount / quantity * 10000;
@@ -1359,8 +1442,8 @@ function refreshIdecoAcquisitionUnitPreview() {
   const ideco = isIdecoCategory($("#holding-account-category").value);
   preview.hidden = !ideco;
   if (!ideco) return;
-  const quantity = parseHoldingNumericInput($("#holding-quantity").value);
-  const acquisitionAmount = parseHoldingNumericInput($("#holding-cost").value);
+  const quantity = validateHoldingField("quantity").value ?? null;
+  const acquisitionAmount = validateHoldingField("cost").value ?? null;
   const unitCost = quantity === null ? null : calculateIdecoAcquisitionUnitCost(quantity, acquisitionAmount);
   const formatted = unitCost === null ? null : new Intl.NumberFormat("ja-JP", { maximumFractionDigits: 2 }).format(unitCost);
   preview.textContent = `取得単価（自動計算）：${formatted === null ? "—" : `${formatted}円`}`;
@@ -1382,31 +1465,81 @@ function updateHoldingFormLabels() {
   refreshIdecoAcquisitionUnitPreview();
 }
 function openHolding(id) {
-  const h=data.holdings.find(x=>x.id===id); $("#holding-form").reset(); $("#holding-id").value=id||""; $("#holding-dialog-title").textContent=h?"保有資産を編集":"保有資産を追加"; $("#holding-form-kicker").textContent=h?"EDIT HOLDING":"NEW HOLDING"; $("#holding-account").innerHTML=data.accounts.map(a=>`<option value="${a.id}">${escapeHTML(a.name)}</option>`).join("");
+  const holding = data.holdings.find(item => item.id === id);
+  // A late response from a previous dialog session must not affect this one.
+  holdingLookupRequest++;
+  $("#holding-symbol").disabled = false;
+  $("#lookup-name").disabled = false;
+  holdingEditState = null;
+  holdingFieldErrors = { quantity: "", cost: "", form: "" };
+  $("#holding-form").reset();
+  ["#holding-name", "#holding-quantity", "#holding-cost"].forEach(selector => {
+    delete $(selector).dataset.cleared;
+  });
+  $("#holding-id").value = id || "";
+  $("#holding-dialog-title").textContent = holding ? "保有資産を編集" : "保有資産を追加";
+  $("#holding-form-kicker").textContent = holding ? "EDIT HOLDING" : "NEW HOLDING";
+  $("#holding-account").innerHTML = data.accounts.map(account => `<option value="${account.id}">${escapeHTML(account.name)}</option>`).join("");
   const categorySelect = $("#holding-account-category");
   categorySelect.replaceChildren(...(data.accountCategories || []).map(category => new Option(category.label, category.code)));
   if (!categorySelect.options.length) categorySelect.add(new Option("口座区分を取得できません", ""));
-  categorySelect.value = h?.accountCategoryCode || "unassigned";
-  if(h){ $("#holding-account").value=h.accountId; $("#holding-type").value=h.type; $("#holding-currency").value=h.currency; $("#holding-name").value=h.name; $("#holding-symbol").value=displaySymbol(h.type, h.symbol); $("#holding-quantity").value=h.quantity; $("#holding-cost").value=h.cost; } $("#name-lookup-status").textContent=""; $("#holding-input-error").hidden=true; $("#holding-input-error").textContent=""; updateHoldingFormLabels(); if(h && isIdecoCategory(categorySelect.value)) $("#holding-cost").value = h.cost * h.quantity / 10000; formatHoldingNumericField($("#holding-quantity")); formatHoldingNumericField($("#holding-cost")); refreshIdecoAcquisitionUnitPreview(); $("#holding-dialog").showModal();
+  categorySelect.value = holding?.accountCategoryCode || "unassigned";
+  if (holding) {
+    $("#holding-account").value = holding.accountId;
+    $("#holding-type").value = holding.type;
+    $("#holding-currency").value = holding.currency;
+    $("#holding-name").value = holding.name;
+    $("#holding-symbol").value = displaySymbol(holding.type, holding.symbol);
+    $("#holding-quantity").value = HoldingNumberRules.format(holding.quantity) ?? "";
+    const enteredCost = isIdecoCategory(categorySelect.value)
+      ? normalizeIdecoAcquisitionAmount(holding.cost * holding.quantity / 10000) : holding.cost;
+    $("#holding-cost").value = HoldingNumberRules.format(enteredCost) ?? "";
+  }
+  $("#name-lookup-status").textContent = "";
+  showHoldingInputError("");
+  updateHoldingFormLabels();
+  holdingEditState = {
+    original: holding ? { ...holding, symbol: normalizeStoredSymbol(holding.type, holding.symbol.toUpperCase()) } : null,
+    originalQuantity: holding?.quantity, originalCost: holding?.cost,
+    confirmedIdentity: holding ? { type: holding.type, symbol: normalizeStoredSymbol(holding.type, holding.symbol.toUpperCase()) } : null,
+    classification: holdingFormContext()
+  };
+  refreshIdecoAcquisitionUnitPreview();
+  $("#holding-dialog").showModal();
 }
 function openAccount(id) { const a=data.accounts.find(x=>x.id===id); $("#account-form").reset(); $("#account-id").value=id||""; $("#account-dialog-title").textContent=a?"証券口座を編集":"証券口座を追加"; $("#account-form-kicker").textContent=a?"EDIT ACCOUNT":"NEW ACCOUNT"; if(a){$("#account-name").value=a.name;$("#account-note").value=a.note} $("#account-dialog").showModal(); }
 async function lookupHoldingName() {
-  const button = $("#lookup-name"), status = $("#name-lookup-status");
+  const button = $("#lookup-name"), status = $("#name-lookup-status"), field = $("#holding-symbol");
+  if (button.disabled) return;
   const type = $("#holding-type").value;
-  if (type === "投資信託") $("#holding-symbol").value = $("#holding-symbol").value.toUpperCase();
-  const symbol = normalizeStoredSymbol(type, $("#holding-symbol").value.toUpperCase());
+  field.value = field.value.toUpperCase();
+  const symbol = normalizeStoredSymbol(type, field.value);
   if (!symbol) { status.textContent = "先に銘柄コードを入力してください"; return; }
-  button.disabled = true; status.textContent = "取得中…";
+  const request = ++holdingLookupRequest;
+  button.disabled = true; field.disabled = true; status.textContent = "取得中…";
+  const editId = $("#holding-id").value;
+  const isCurrent = () => request === holdingLookupRequest && $("#holding-dialog").open &&
+    editId === $("#holding-id").value && type === $("#holding-type").value && symbol === holdingFormContext().symbol;
   try {
     const res = type === "投資信託"
       ? await fetch(`/api/quote?symbol=${encodeURIComponent(symbol)}&type=${encodeURIComponent(type)}`)
       : await fetch(`/api/name?symbol=${encodeURIComponent(symbol)}&type=${encodeURIComponent(type)}`);
     const result = await res.json();
+    if (!isCurrent()) return;
     if (!res.ok) throw new Error(result.error || "銘柄情報を取得できませんでした");
     if (!result.name) throw new Error("銘柄名を取得できませんでした。銘柄名を手入力してください。");
-    $("#holding-name").value = result.name; status.textContent = "銘柄名を入力しました。必要に応じて修正できます。";
-  } catch (error) { status.textContent = `${error.message} 銘柄名は手入力できます。`; }
-  finally { button.disabled = false; }
+    confirmHoldingSymbolChange({ type, symbol });
+    $("#holding-name").value = result.name;
+    delete $("#holding-name").dataset.cleared;
+    status.textContent = "銘柄名を入力しました。必要に応じて修正できます。";
+  } catch (error) {
+    if (isCurrent()) status.textContent = `${error.message} 銘柄名は手入力できます。`;
+  } finally {
+    if (request === holdingLookupRequest) {
+      button.disabled = false; field.disabled = false;
+      if (!isCurrent()) status.textContent = "入力内容が変わったため、取得結果を反映しませんでした。";
+    }
+  }
 }
 async function updateQuote(h) {
   h.quoteAttemptedAt = Date.now();
@@ -1651,27 +1784,23 @@ $("#holding-form").addEventListener("submit",async e=>{
       return;
     }
   }
-  const quantity = parseHoldingNumericInput($("#holding-quantity").value);
-  const enteredCost = parseHoldingNumericInput($("#holding-cost").value);
-  const inputError = $("#holding-input-error");
-  if (quantity === null || quantity <= 0) {
-    inputError.textContent = "保有数量は0より大きい数値で入力してください。";
-    inputError.hidden = false;
+  if ($("#lookup-name").disabled) { showHoldingInputError("銘柄情報の取得が完了してから保存してください。"); return; }
+  if (confirmHoldingSymbolChange()) return;
+  const quantityResult = validateHoldingField("quantity"), costResult = validateHoldingField("cost");
+  if (quantityResult.error || costResult.error) {
+    holdingFieldErrors.form = "";
+    setHoldingFieldError("quantity", quantityResult.error || "");
+    setHoldingFieldError("cost", costResult.error || "");
     return;
   }
-  if (enteredCost === null || enteredCost < 0) {
-    inputError.textContent = ideco ? "取得金額は0円以上の数値で入力してください。" : "取得単価は0以上の数値で入力してください。";
-    inputError.hidden = false;
-    return;
+  const quantity = quantityResult.value;
+  const cost = ideco ? calculateIdecoAcquisitionUnitCost(quantity, costResult.value) : costResult.value;
+  if (cost === null || !Number.isFinite(cost) || (ideco && cost > Number.MAX_SAFE_INTEGER)) {
+    showHoldingInputError("保有数量と取得値を安全に扱える範囲で入力してください。"); return;
   }
-  const cost = ideco ? calculateIdecoAcquisitionUnitCost(quantity, enteredCost) : enteredCost;
-  if (cost === null) {
-    inputError.textContent = "保有数量と取得金額を確認してください。";
-    inputError.hidden = false;
-    return;
-  }
-  inputError.hidden = true;
-  inputError.textContent = "";
+  formatHoldingNumericField($("#holding-quantity"));
+  formatHoldingNumericField($("#holding-cost"));
+  showHoldingInputError("");
   const previousData=cloneData(data), id=$("#holding-id").value;
   const h={id:id||generateId(),accountId:$("#holding-account").value,accountCategoryCode:$("#holding-account-category").value,type,currency:$("#holding-currency").value,name:$("#holding-name").value.trim(),symbol:normalizeStoredSymbol(type,$("#holding-symbol").value.toUpperCase()),quantity,cost};
   if (!h.symbol) { $("#name-lookup-status").textContent = "銘柄コードを入力してください。"; return; }
@@ -1684,7 +1813,7 @@ $("#holding-form").addEventListener("submit",async e=>{
   }
   $("#name-lookup-status").textContent = "";
   if (old >= 0) {
-    const sameQuote = normalizeStoredSymbol(previous.type, previous.symbol) === h.symbol && previous.type === h.type && previous.currency === h.currency;
+    const sameQuote = normalizeStoredSymbol(previous.type, previous.symbol).toUpperCase() === h.symbol && previous.type === h.type && previous.currency === h.currency;
     data.holdings[old] = { ...previous, ...h, ...(!sameQuote ? {
       price: null, previousClose: null, priceTimestamp: null, priceDate: null, quoteStatus: "unknown", quoteAttemptedAt: null
     } : {}) };
@@ -1701,20 +1830,44 @@ $("#account-form").addEventListener("submit",async e=>{
   try { await persistState(previousData); $("#account-dialog").close(); }
   catch { /* Keep the dialog open so the user can retry or reapply after a conflict. */ }
 });
-$("#filter-account").addEventListener("change",renderHoldingsTable);$("#filter-type").addEventListener("change",renderHoldingsTable);$("#holding-type").addEventListener("change",updateHoldingFormLabels);$("#refresh-all").addEventListener("click",updateAll);$("#lookup-name").addEventListener("click",lookupHoldingName);
+$("#filter-account").addEventListener("change",renderHoldingsTable);$("#filter-type").addEventListener("change",renderHoldingsTable);$("#holding-type").addEventListener("change",handleHoldingClassificationChange);$("#refresh-all").addEventListener("click",updateAll);$("#lookup-name").addEventListener("click",lookupHoldingName);
 $("#holding-account").addEventListener("change", updateHoldingFormLabels);
-$("#holding-account-category").addEventListener("change", updateHoldingFormLabels);
+$("#holding-account-category").addEventListener("change", handleHoldingAccountCategoryChange);
+$("#holding-currency").addEventListener("change", handleHoldingClassificationChange);
+$("#holding-dialog").addEventListener("cancel", () => { holdingLookupRequest++; });
+$("#holding-dialog").addEventListener("close", () => {
+  if ($("#holding-dialog").open) return;
+  holdingLookupRequest++;
+  $("#holding-symbol").disabled = false;
+  $("#lookup-name").disabled = false;
+});
 $("#holding-symbol").addEventListener("blur", event => {
   if ($("#holding-type").value === "投資信託") event.target.value = event.target.value.toUpperCase();
 });
 ["#holding-quantity", "#holding-cost"].forEach(selector => {
   const field = $(selector);
-  field.addEventListener("focus", () => { field.value = field.value.replaceAll(",", ""); });
+  field.addEventListener("focus", () => {
+    // Do not silently repair malformed comma groups before they can be validated.
+    if (HoldingNumberRules.decimalText(field.value) !== null) field.value = field.value.replaceAll(",", "");
+  });
   field.addEventListener("blur", () => {
-    formatHoldingNumericField(field);
+    const result = validateHoldingField(selector === "#holding-quantity" ? "quantity" : "cost");
+    if (!result.error) formatHoldingNumericField(field);
+    showHoldingInputError(result.error, selector);
     refreshIdecoAcquisitionUnitPreview();
   });
-  field.addEventListener("input", () => { $("#holding-input-error").hidden = true; });
+  field.addEventListener("input", () => {
+    holdingFieldErrors.form = "";
+    const fieldName = selector === "#holding-quantity" ? "quantity" : "cost";
+    if (holdingFieldErrors[fieldName]) {
+      const result = validateHoldingField(fieldName);
+      setHoldingFieldError(fieldName, result.error || "");
+    } else renderHoldingInputErrors();
+    if (field.value.trim() !== "") delete field.dataset.cleared;
+  });
+});
+$("#holding-name").addEventListener("input", event => {
+  if (event.target.value.trim() !== "") delete event.target.dataset.cleared;
 });
 $("#trend-detail-account").addEventListener("change", event => {
   selectedTrendDetailAccountId = event.target.value;
