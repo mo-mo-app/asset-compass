@@ -660,3 +660,21 @@
 @media(max-width:600px){
   #holding-input-error{white-space:normal}
 }
+
+/* Classification editing stays within the existing scrollable holding dialog. */
+@media(min-width:601px){#holding-dialog{max-height:calc(100dvh - 30px);overflow-y:auto}}
+.holding-classifications{border-top:1px solid var(--line);margin-top:20px;padding-top:18px;min-width:0}
+.holding-classifications h3{font-size:14px;margin:0 0 8px}
+.classification-note{font-size:11px;color:var(--muted);line-height:1.7;margin-bottom:15px}
+.classification-field{min-width:0;margin-bottom:16px}
+.classification-field[hidden]{display:none}
+.dialog-card .classification-field label{margin-bottom:7px}
+.classification-field input,.classification-field select{width:100%;min-width:0;max-width:100%;margin-top:0}
+.classification-status{font-size:11px;line-height:1.7;margin-top:7px;overflow-wrap:anywhere}
+.classification-status[data-source="user"]{color:var(--teal);font-weight:600}
+.classification-field small{line-height:1.7;overflow-wrap:anywhere}
+.classification-reset{padding:8px 0;text-align:left;min-height:36px}
+.classification-reset:disabled{color:var(--muted);cursor:default}
+@media(max-width:600px){
+  .classification-reset{min-height:44px}
+}

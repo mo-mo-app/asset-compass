@@ -11,7 +11,7 @@ const port = Number(process.env.ASSET_COMPASS_PORT) || 8766;
 const bindLan = process.env.ASSET_COMPASS_BIND_LAN !== "false";
 const host = process.env.ASSET_COMPASS_HOST;
 const trustProxy = process.env.ASSET_COMPASS_TRUST_PROXY === "true";
-const publicFiles = new Set(["index.html", "app.js", "symbols.js", "holding-number-rules.js", "asset-goal-simulation.js", "styles.css", "funds.css", "assets/version-history.json", "assets/asset-compass-logo.svg", "assets/asset-compass-icon.svg", "assets/asset-compass-mono.svg", "assets/favicon.svg", "assets/apple-touch-icon.png", "assets/icons/asset-weather-storm.svg", "assets/icons/asset-weather-rain.svg", "assets/icons/asset-weather-cloud.svg", "assets/icons/asset-weather-partly-cloudy.svg", "assets/icons/asset-weather-sunny.svg", "assets/icons/asset-weather-very-sunny.svg", "assets/icons/asset-weather-special.svg"]);
+const publicFiles = new Set(["index.html", "app.js", "symbols.js", "holding-number-rules.js", "classification-masters.js", "classification-editor.js", "asset-goal-simulation.js", "styles.css", "funds.css", "assets/version-history.json", "assets/asset-compass-logo.svg", "assets/asset-compass-icon.svg", "assets/asset-compass-mono.svg", "assets/favicon.svg", "assets/apple-touch-icon.png", "assets/icons/asset-weather-storm.svg", "assets/icons/asset-weather-rain.svg", "assets/icons/asset-weather-cloud.svg", "assets/icons/asset-weather-partly-cloudy.svg", "assets/icons/asset-weather-sunny.svg", "assets/icons/asset-weather-very-sunny.svg", "assets/icons/asset-weather-special.svg"]);
 
 const contentTypes = {".html":"text/html; charset=utf-8",".js":"text/javascript; charset=utf-8",".css":"text/css; charset=utf-8",".json":"application/json; charset=utf-8",".svg":"image/svg+xml",".png":"image/png"};
 const send = (res, status, body, type="application/json; charset=utf-8") => {
@@ -137,14 +137,32 @@ async function marketWeather() {
 async function stockName(symbol, type) {
   const quoteSymbol = toQuoteSymbol(type, symbol);
   if (!/^[A-Z0-9.=^\-]+$/i.test(quoteSymbol)) throw new Error("Invalid symbol");
-  const response = await fetch(`https://finance.yahoo.co.jp/quote/${encodeURIComponent(quoteSymbol)}`, {headers:{"User-Agent":"Mozilla/5.0 (Asset Compass)"}});
-  if (!response.ok) throw new Error("Yahoo!ファイナンスで銘柄コードが見つかりません");
-  const html = await response.text();
-  const title = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1];
-  if (!title) throw new Error("Yahoo!ファイナンスから銘柄名を取得できませんでした");
-  const name = title.replace(/\s*[-｜|]\s*Yahoo!?ファイナンス.*$/i, "").replace(/[【〖][^】〗]*[】〗].*$/, "").replace(/&amp;/g, "&").trim();
-  if (!name) throw new Error("Yahoo!ファイナンスから銘柄名を取得できませんでした");
-  return {name};
+  try {
+    const response = await fetch(`https://finance.yahoo.co.jp/quote/${encodeURIComponent(quoteSymbol)}`, {headers:{"User-Agent":"Mozilla/5.0 (Asset Compass)"}});
+    if (!response.ok) throw new Error("Yahoo!ファイナンスで銘柄コードが見つかりません");
+    const html = await response.text();
+    const title = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1];
+    if (!title) throw new Error("Yahoo!ファイナンスから銘柄名を取得できませんでした");
+    const name = title.replace(/\s*[-｜|]\s*Yahoo!?ファイナンス.*$/i, "").replace(/[【〖][^】〗]*[】〗].*$/, "").replace(/&amp;/g, "&").trim();
+    if (!name) throw new Error("Yahoo!ファイナンスから銘柄名を取得できませんでした");
+    return {name};
+  } catch (originalError) {
+    // Preserve Japanese names and legacy Japanese-symbol behavior. Old US clients may omit type.
+    if (type !== "米国株" && (type || /\.T$/i.test(quoteSymbol))) throw originalError;
+    try {
+      const response = await fetch(`https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(quoteSymbol)}&quotesCount=10&newsCount=0`, {headers:{"User-Agent":"AssetCompass/1.0"}});
+      if (response.ok) {
+        const results = (await response.json()).quotes;
+        for (const result of Array.isArray(results) ? results : []) {
+          if (typeof result?.symbol !== "string" || result.symbol.toUpperCase() !== quoteSymbol.toUpperCase() ||
+              !["EQUITY", "ETF"].includes(result.quoteType)) continue;
+          const name = [result.longname, result.shortname].find(value => typeof value === "string" && value.trim());
+          if (name) return { name: name.trim() };
+        }
+      }
+    } catch { /* Preserve the original error when the fallback is also unavailable. */ }
+    throw originalError;
+  }
 }
 async function fundQuote(code) {
   code = String(code || "").toUpperCase();

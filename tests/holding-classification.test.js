@@ -71,20 +71,19 @@ test("classification codes survive API import, edits, legacy saves, cache and re
   }
   const before = structuredClone(state.data);
   const changed = structuredClone(state.data);
-  changed.holdings[0].auto_sector_code = "sector_test_3";
-  changed.holdings[2].user_fund_category_code = "fund_test_3";
+  changed.holdings[2].user_fund_category_code = "HIGH_DIVIDEND";
   state = await put(app.base, state, changed);
   assert.equal(state.data.holdings[0].user_sector_code, "sector_test_2", "auto and user codes are independent");
   const legacy = structuredClone(state.data);
   for (const holding of legacy.holdings) for (const field of fields) delete holding[field];
   legacy.holdings[0].quantity = 3;
   state = await put(app.base, state, legacy);
-  assert.equal(state.data.holdings[0].auto_sector_code, "sector_test_3");
-  assert.equal(state.data.holdings[2].user_fund_category_code, "fund_test_3");
+  assert.equal(state.data.holdings[0].auto_sector_code, "sector_test_1");
+  assert.equal(state.data.holdings[2].user_fund_category_code, "HIGH_DIVIDEND");
   const cleared = structuredClone(state.data);
-  for (const field of fields) cleared.holdings[0][field] = null;
+  for (const field of fields.filter(field => field.startsWith("user_"))) cleared.holdings[0][field] = null;
   state = await put(app.base, state, cleared);
-  for (const field of fields) assert.equal(state.data.holdings[0][field], null);
+  for (const field of fields) assert.equal(state.data.holdings[0][field], field.startsWith("user_") ? null : sample.holdings[0][field] ?? null);
   const withNew = structuredClone(state.data);
   withNew.holdings.push({ id: "new", accountId: "a", type: "日本株", currency: "JPY", symbol: "9432", name: "NTT", quantity: 1, cost: 170 });
   state = await put(app.base, state, withNew);

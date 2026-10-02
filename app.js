@@ -109,7 +109,9 @@ async function persistState(previousData, snapshotMetadata = null) {
     const response = await fetch("/api/v1/state", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ expectedRevision: serverRevision, data, ...(snapshotMetadata ? { snapshot: snapshotMetadata } : {}) })
+      body: JSON.stringify({ expectedRevision: serverRevision,
+        data: typeof AssetCompassClassificationEditor === "undefined" ? data : AssetCompassClassificationEditor.toSaveData(data),
+        ...(snapshotMetadata ? { snapshot: snapshotMetadata } : {}) })
     });
     const payload = await response.json().catch(() => ({}));
     if (response.status === 409) {
@@ -1339,6 +1341,7 @@ function normalizeIdecoAcquisitionAmount(value) {
   return Number.isFinite(value) && value >= 0 ? Math.round(value) : null;
 }
 let holdingEditState = null;
+let holdingClassificationEditor = null;
 let holdingLookupRequest = 0;
 let holdingFieldErrors = { quantity: "", cost: "", form: "" };
 function renderHoldingInputErrors() {
@@ -1462,6 +1465,7 @@ function updateHoldingFormLabels() {
   $("#holding-symbol-label").textContent = isFund ? "投信コード" : "Yahoo Finance ティッカー";
   $("#holding-symbol-help").textContent = isFund ? "半角英数字8文字。銘柄名・基準価額を取得します。" : "このティッカーで価格を自動取得します";
   $("#fund-unit-note").hidden = !isFund;
+  holdingClassificationEditor?.setType($("#holding-type").value);
   refreshIdecoAcquisitionUnitPreview();
 }
 function openHolding(id) {
@@ -1505,6 +1509,10 @@ function openHolding(id) {
     classification: holdingFormContext()
   };
   refreshIdecoAcquisitionUnitPreview();
+  if (typeof AssetCompassClassificationEditor !== "undefined") {
+    holdingClassificationEditor ||= AssetCompassClassificationEditor.createEditor($("#holding-classifications"));
+    holdingClassificationEditor.open(holding, $("#holding-type").value);
+  }
   $("#holding-dialog").showModal();
 }
 function openAccount(id) { const a=data.accounts.find(x=>x.id===id); $("#account-form").reset(); $("#account-id").value=id||""; $("#account-dialog-title").textContent=a?"証券口座を編集":"証券口座を追加"; $("#account-form-kicker").textContent=a?"EDIT ACCOUNT":"NEW ACCOUNT"; if(a){$("#account-name").value=a.name;$("#account-note").value=a.note} $("#account-dialog").showModal(); }
@@ -1803,6 +1811,12 @@ $("#holding-form").addEventListener("submit",async e=>{
   showHoldingInputError("");
   const previousData=cloneData(data), id=$("#holding-id").value;
   const h={id:id||generateId(),accountId:$("#holding-account").value,accountCategoryCode:$("#holding-account-category").value,type,currency:$("#holding-currency").value,name:$("#holding-name").value.trim(),symbol:normalizeStoredSymbol(type,$("#holding-symbol").value.toUpperCase()),quantity,cost};
+  try { Object.assign(h, holdingClassificationEditor?.getPatch() || {}); }
+  catch (error) {
+    showHoldingInputError(error.message);
+    $("#holding-input-error").scrollIntoView?.({ block: "nearest" });
+    return;
+  }
   if (!h.symbol) { $("#name-lookup-status").textContent = "銘柄コードを入力してください。"; return; }
   const old=data.holdings.findIndex(x=>x.id===id);
   const previous = old >= 0 ? data.holdings[old] : null;

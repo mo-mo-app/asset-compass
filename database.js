@@ -3,6 +3,7 @@ const path = require("node:path");
 const { DatabaseSync } = require("node:sqlite");
 const { normalizeStoredSymbol, sameHoldingSlot } = require("./symbols");
 const HoldingNumberRules = require("./holding-number-rules");
+const { assertEditableClassification } = require("./classification-editor");
 const classificationFields = [
   "auto_sector_code", "user_sector_code",
   "auto_industry_code", "user_industry_code",
@@ -559,6 +560,7 @@ function saveState(expectedRevision, input, snapshotMetadata = null) {
     const existingCategories = new Map(existingHoldings.map(row => [row.id, row.accountCategoryCode]));
     const existingById = new Map(existingHoldings.map(holding => [holding.id, { ...holding, symbol: normalizeStoredSymbol(holding.type, holding.symbol).toUpperCase() }]));
     const data = normalizeState(input, existingCategories, existingById);
+    for (const holding of data.holdings) assertEditableClassification(holding, existingById.get(holding.id));
     const submittedIds = new Set(data.holdings.map(holding => holding.id));
     const effectiveHoldings = data.holdings.concat(existingHoldings.filter(holding => !submittedIds.has(holding.id)));
     for (const holding of data.holdings) {
