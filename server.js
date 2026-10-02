@@ -9,6 +9,8 @@ const root = __dirname;
 let migration = null;
 const port = Number(process.env.ASSET_COMPASS_PORT) || 8766;
 const bindLan = process.env.ASSET_COMPASS_BIND_LAN !== "false";
+const host = process.env.ASSET_COMPASS_HOST;
+const trustProxy = process.env.ASSET_COMPASS_TRUST_PROXY === "true";
 const publicFiles = new Set(["index.html", "app.js", "symbols.js", "holding-number-rules.js", "asset-goal-simulation.js", "styles.css", "funds.css", "assets/version-history.json", "assets/asset-compass-logo.svg", "assets/asset-compass-icon.svg", "assets/asset-compass-mono.svg", "assets/favicon.svg", "assets/apple-touch-icon.png", "assets/icons/asset-weather-storm.svg", "assets/icons/asset-weather-rain.svg", "assets/icons/asset-weather-cloud.svg", "assets/icons/asset-weather-partly-cloudy.svg", "assets/icons/asset-weather-sunny.svg", "assets/icons/asset-weather-very-sunny.svg", "assets/icons/asset-weather-special.svg"]);
 
 const contentTypes = {".html":"text/html; charset=utf-8",".js":"text/javascript; charset=utf-8",".css":"text/css; charset=utf-8",".json":"application/json; charset=utf-8",".svg":"image/svg+xml",".png":"image/png"};
@@ -34,11 +36,16 @@ function readJson(req, limit = 2 * 1024 * 1024) {
   });
 }
 function isSameOriginMutation(req) {
+  let protocol = req.socket.encrypted ? "https:" : "http:";
+  if (trustProxy && req.headers["x-forwarded-proto"] !== undefined) {
+    const forwardedProtocol = req.headers["x-forwarded-proto"];
+    if (forwardedProtocol !== "http" && forwardedProtocol !== "https") return false;
+    protocol = `${forwardedProtocol}:`;
+  }
   const origin = req.headers.origin;
   if (!origin) return true;
   try {
     const parsed = new URL(origin);
-    const protocol = req.socket.encrypted ? "https:" : "http:";
     return parsed.protocol === protocol && parsed.host.toLowerCase() === String(req.headers.host || "").toLowerCase();
   } catch { return false; }
 }
@@ -228,15 +235,22 @@ const lanAddresses = Object.entries(interfaces)
   .filter(entry => !entry.internal && (entry.family === "IPv4" || entry.family === 4) && isPrivateIPv4(entry.address))
   .sort((a, b) => Number(!/wi-?fi|wireless|wlan/i.test(a.name)) - Number(!/wi-?fi|wireless|wlan/i.test(b.name)));
 
-function startListener(host, label) {
+function startListener(host, label, failOnError = false) {
   const server = http.createServer(handleRequest);
-  server.on("error", error => console.error(`${label} (${host}) の起動に失敗しました: ${error.message}`));
+  server.on("error", error => {
+    console.error(`${label} (${host}) の起動に失敗しました: ${error.message}`);
+    if (failOnError) process.exitCode = 1;
+  });
   server.listen(port, host, () => console.log(`${label}: http://${host}:${port}`));
 }
 
-startListener("127.0.0.1", "PC内アクセス");
-if (bindLan && lanAddresses.length) {
-  lanAddresses.forEach((entry, index) => startListener(entry.address, index === 0 ? "同一LANアクセス" : `LANアクセス候補 (${entry.name})`));
-} else if (bindLan) {
-  console.log("同一LAN用のプライベートIPv4アドレスが見つかりませんでした。");
+if (host) {
+  startListener(host, "サーバーアクセス", true);
+} else {
+  startListener("127.0.0.1", "PC内アクセス");
+  if (bindLan && lanAddresses.length) {
+    lanAddresses.forEach((entry, index) => startListener(entry.address, index === 0 ? "同一LANアクセス" : `LANアクセス候補 (${entry.name})`));
+  } else if (bindLan) {
+    console.log("同一LAN用のプライベートIPv4アドレスが見つかりませんでした。");
+  }
 }
