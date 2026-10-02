@@ -3,6 +3,12 @@ const path = require("node:path");
 const { DatabaseSync } = require("node:sqlite");
 const { normalizeStoredSymbol, sameHoldingSlot } = require("./symbols");
 const HoldingNumberRules = require("./holding-number-rules");
+const classificationFields = [
+  "auto_sector_code", "user_sector_code",
+  "auto_industry_code", "user_industry_code",
+  "auto_fund_category_code", "user_fund_category_code",
+  "auto_sensitivity_code", "user_sensitivity_code"
+];
 
 const databasePath = process.env.ASSET_COMPASS_DB_PATH || path.join(__dirname, "data", "asset-compass.sqlite");
 fs.mkdirSync(path.dirname(databasePath), { recursive: true });
@@ -12,7 +18,7 @@ db.exec("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA busy_timeou
 
 function runMigrations() {
   const currentVersion = db.prepare("PRAGMA user_version").get().user_version;
-  if (currentVersion > 4) throw new Error(`Database schema version ${currentVersion} is newer than this application supports.`);
+  if (currentVersion > 5) throw new Error(`Database schema version ${currentVersion} is newer than this application supports.`);
 
   if (currentVersion === 0) {
     db.exec("BEGIN IMMEDIATE");
@@ -200,9 +206,36 @@ function runMigrations() {
       throw error;
     }
   }
+  if (db.prepare("PRAGMA user_version").get().user_version < 5) {
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      for (const field of classificationFields) {
+        db.exec(`ALTER TABLE holdings ADD COLUMN ${field} TEXT
+          CHECK (${field} IS NULL OR (
+            typeof(${field}) = 'text' AND length(${field}) BETWEEN 1 AND 128
+            AND ${field} NOT GLOB '*[^A-Za-z0-9_.:-]*'
+          ))`);
+      }
+      db.exec("PRAGMA user_version = 5; COMMIT;");
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
+  }
 }
 
 runMigrations();
+
+function classificationCodes(holding, previous, fieldName) {
+  return Object.fromEntries(classificationFields.map(field => {
+    const value = Object.hasOwn(holding, field) ? holding[field] : previous?.[field] ?? null;
+    if (value === null) return [field, null];
+    if (typeof value !== "string" || !/^[A-Za-z0-9_.:-]{1,128}$/.test(value)) {
+      throw new Error(`${fieldName}.${field} must be a code (1-128 ASCII letters, digits, _, ., :, -) or null.`);
+    }
+    return [field, value];
+  }));
+}
 
 function optionalTimestamp(value, fieldName) {
   if (value === null || value === undefined || value === "") return null;
@@ -287,7 +320,8 @@ function normalizeState(input, existingCategories = new Map(), existingHoldings 
       symbol: requiredText(normalizeStoredSymbol(type, requiredText(holding?.symbol, `${field}.symbol`)), `${field}.symbol`),
       quantity: holding.quantity, cost: holding.cost, price, previousClose, quoteStatus, quoteAttemptedAt,
       priceTimestamp: optionalTimestamp(holding.priceTimestamp, `${field}.priceTimestamp`),
-      priceDate
+      priceDate,
+      ...classificationCodes(holding, existingHoldings?.get(id), field)
     };
   });
   if (new Set(holdings.map(holding => holding.id)).size !== holdings.length) throw new Error("Holding IDs must be unique.");
@@ -308,13 +342,14 @@ function upsertState(data) {
     ON CONFLICT(id) DO UPDATE SET name = excluded.name, note = excluded.note, updated_at = excluded.updated_at
   `);
   const upsertHolding = db.prepare(`
-    INSERT INTO holdings (id, account_id, account_category_code, type, currency, name, symbol, quantity, cost, created_at, updated_at, quote_status, quote_attempted_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO holdings (id, account_id, account_category_code, type, currency, name, symbol, quantity, cost, created_at, updated_at, quote_status, quote_attempted_at, ${classificationFields.join(", ")})
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${classificationFields.map(() => "?").join(", ")})
     ON CONFLICT(id) DO UPDATE SET account_id = excluded.account_id, type = excluded.type,
       account_category_code = excluded.account_category_code, currency = excluded.currency,
       name = excluded.name, symbol = excluded.symbol,
       quantity = excluded.quantity, cost = excluded.cost, updated_at = excluded.updated_at,
-      quote_status = excluded.quote_status, quote_attempted_at = excluded.quote_attempted_at
+      quote_status = excluded.quote_status, quote_attempted_at = excluded.quote_attempted_at,
+      ${classificationFields.map(field => `${field} = excluded.${field}`).join(", ")}
   `);
   const upsertQuote = db.prepare(`
     INSERT INTO holding_quotes (holding_id, price, previous_close, price_timestamp, price_date)
@@ -325,7 +360,7 @@ function upsertState(data) {
 
   for (const account of data.accounts) upsertAccount.run(account.id, account.name, account.note, now, now);
   for (const holding of data.holdings) {
-    upsertHolding.run(holding.id, holding.accountId, holding.accountCategoryCode, holding.type, holding.currency, holding.name, holding.symbol, holding.quantity, holding.cost, now, now, holding.quoteStatus, holding.quoteAttemptedAt);
+    upsertHolding.run(holding.id, holding.accountId, holding.accountCategoryCode, holding.type, holding.currency, holding.name, holding.symbol, holding.quantity, holding.cost, now, now, holding.quoteStatus, holding.quoteAttemptedAt, ...classificationFields.map(field => holding[field]));
     if (holding.price !== null) upsertQuote.run(holding.id, holding.price, holding.previousClose, holding.priceTimestamp, holding.priceDate);
     else db.prepare("DELETE FROM holding_quotes WHERE holding_id = ?").run(holding.id);
   }
@@ -348,14 +383,16 @@ function getState() {
   `).all();
   const holdings = db.prepare(`
     SELECT h.id, h.account_id, h.account_category_code, h.type, h.currency, h.name, h.symbol, h.quantity, h.cost,
-      q.price, q.previous_close, q.price_timestamp, q.price_date, h.quote_status, h.quote_attempted_at
+      q.price, q.previous_close, q.price_timestamp, q.price_date, h.quote_status, h.quote_attempted_at,
+      ${classificationFields.map(field => `h.${field}`).join(", ")}
     FROM holdings h LEFT JOIN holding_quotes q ON q.holding_id = h.id ORDER BY h.rowid
   `).all().map(row => ({
     id: row.id, accountId: row.account_id, accountCategoryCode: row.account_category_code, type: row.type, currency: row.currency,
     name: row.name, symbol: normalizeStoredSymbol(row.type, row.symbol), quantity: row.quantity, cost: row.cost,
     price: row.price ?? null, previousClose: row.previous_close ?? null,
     priceTimestamp: row.price_timestamp ?? null, priceDate: row.price_date ?? null,
-    quoteStatus: row.quote_status, quoteAttemptedAt: row.quote_attempted_at ?? null
+    quoteStatus: row.quote_status, quoteAttemptedAt: row.quote_attempted_at ?? null,
+    ...Object.fromEntries(classificationFields.map(field => [field, row[field] ?? null]))
   }));
   const fx = db.prepare("SELECT rate, price_timestamp FROM fx_rates WHERE base_currency = 'USD' AND quote_currency = 'JPY'").get();
 
@@ -516,7 +553,8 @@ function saveState(expectedRevision, input, snapshotMetadata = null) {
     if (!current.initialized) return { notInitialized: true, state: getState() };
     if (current.revision !== expectedRevision) return { conflict: true, state: getState() };
     const existingHoldings = db.prepare(`
-      SELECT id, account_id AS accountId, account_category_code AS accountCategoryCode, type, currency, symbol, quantity, cost FROM holdings
+      SELECT id, account_id AS accountId, account_category_code AS accountCategoryCode, type, currency, symbol, quantity, cost,
+        ${classificationFields.join(", ")} FROM holdings
     `).all();
     const existingCategories = new Map(existingHoldings.map(row => [row.id, row.accountCategoryCode]));
     const existingById = new Map(existingHoldings.map(holding => [holding.id, { ...holding, symbol: normalizeStoredSymbol(holding.type, holding.symbol).toUpperCase() }]));
