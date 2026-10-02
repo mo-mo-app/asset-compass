@@ -236,7 +236,7 @@ test("SQLite state API migrates once, saves by revision, rejects stale writes, a
 
   assert.equal(fs.existsSync(dbPath), true);
   const db = new DatabaseSync(dbPath);
-  assert.equal(db.prepare("PRAGMA user_version").get().user_version, 4);
+  assert.equal(db.prepare("PRAGMA user_version").get().user_version, 5);
   const tableCount = db.prepare("SELECT count(*) AS count FROM sqlite_master WHERE type = 'table' AND name IN ('app_state','accounts','holdings','holding_quotes','fx_rates')").get().count;
   assert.equal(tableCount, 5);
   assert.equal(db.prepare("PRAGMA foreign_key_list(holdings)").all().some(row => row.table === "accounts" && row.from === "account_id"), true);
@@ -352,7 +352,7 @@ test("SQLite state API migrates once, saves by revision, rejects stale writes, a
   });
   assert.equal(migrationRun.status, 0, migrationRun.stderr.toString());
   const upgradedDb = new DatabaseSync(legacyDbPath);
-  assert.equal(upgradedDb.prepare("PRAGMA user_version").get().user_version, 4);
+  assert.equal(upgradedDb.prepare("PRAGMA user_version").get().user_version, 5);
   assert.equal(upgradedDb.prepare("SELECT name FROM accounts WHERE id = 'legacy-account'").get().name, "既存口座");
   assert.equal(upgradedDb.prepare("SELECT revision FROM app_state WHERE singleton_id = 1").get().revision, 8);
   assert.equal(upgradedDb.prepare("SELECT price FROM holding_quotes").get().price, 100);
@@ -404,7 +404,7 @@ test("v3 upgrade preserves accounts, quotes, FX, snapshots and revision", () => 
     assert.equal(result.status, 0, result.stderr.toString());
     const upgraded = new DatabaseSync(upgradePath);
     upgraded.exec("PRAGMA foreign_keys = ON");
-    assert.equal(upgraded.prepare("PRAGMA user_version").get().user_version, 4);
+    assert.equal(upgraded.prepare("PRAGMA user_version").get().user_version, 5);
     assert.equal(upgraded.prepare("SELECT revision FROM app_state").get().revision, 7);
     assert.deepEqual(upgraded.prepare("SELECT * FROM accounts").get(), accountBefore);
     assert.deepEqual(upgraded.prepare("SELECT * FROM holding_quotes").get(), quoteBefore);
