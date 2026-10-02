@@ -1,6 +1,6 @@
 # Asset Compass データ設計
 
-この文書では、現行実装と将来予定の分類情報を分けて整理します。v0.2.8では保有資産の分類コード保存と、セクター・景気感応度・ファンドカテゴリの内部マスタを実装しています。分類取得・自動判定・UI表示は後続段階の対象です。
+この文書では、現行実装と将来予定の分類情報を分けて整理します。v0.2.8では保有資産の分類コード保存、内部マスタ、個別株の分類取得・感応度判定サービスを実装しています。既存フローへの組み込みとUI表示は後続段階の対象です。
 
 ## 現行データ
 
@@ -152,7 +152,7 @@ Node.js側の`database.js`がSQLiteを読み書きし、PC・スマートフォ�
 | 景気感応度（共通） | `auto_sensitivity_code` | `user_sensitivity_code` |
 
 - 全8項目はnullableなTEXT列です。コードは1〜128文字のASCII英数字と`_`、`.`、`:`、`-`を許可し、表示名は保存しません。セクター・景気感応度・ファンドカテゴリの表示名は次節の独立マスタから参照します。既存DBの許容コードや保存検証は変更せず、未知のコードも保存できます。
-- 自動値とユーザー値は独立して保持します。参照関数でユーザー値を優先できますが、分類API取得、自動分類、UI表示は未実装です。
+- 自動値とユーザー値は独立して保持します。参照関数はユーザー値を優先します。個別株の分類取得・自動判定は独立サービスで提供し、UI表示と既存フローへの組み込みは未実装です。
 - 新規保有・初回移行で項目がない場合は`null`です。既存保有へのPUTで項目が省略された場合は保存済みの値を維持し、明示的な`null`で解除します。空文字や表示名などコード形式に合わない値は拒否します。
 - 既存の資産種別（日本株・米国株・投資信託）は変更しません。ETF専用種別や識別ロジックは追加せず、既存の株式種別で登録したETFにもファンドカテゴリを保持できるよう、資産種別による列の制限は設けません。
 - v4→v5はトランザクション内の`ALTER TABLE ... ADD COLUMN`で追加します。既存列・価格・スナップショット・revisionは変更しません。途中失敗はロールバックします。旧DBは各既存マイグレーションを経てv5になります。
@@ -179,7 +179,48 @@ const label = masters.getLabel("sensitivity", code);
 
 ブラウザーでスクリプトを読み込む場合は`globalThis.AssetCompassClassificationMasters`として参照できます。今回、HTMLへの組み込みやサーバーの静的配信許可は追加していません。
 
-業種は共通固定マスタを作りません。将来、`industry_source`を別途追加して`YAHOO_JP_TSE33`／`DRILLR`など取得元ごとにコードの意味と表示名を解決する前提です。今回、取得元の判定、ソース列、業種マスタや業種表示名参照は実装しません。同じ業種コードでも取得元が違えば同一分類とみなさない設計にします。
+業種は共通固定マスタを作りません。将来、`industry_source`を別途追加して取得元ごとにコードの意味と表示名を解決する前提です。分類サービスは取得元を`DRILLR`／`YAHOO_JP_TSE33`として返しますが、DBのソース列や業種表示名参照は未実装です。同じ業種コードでも取得元が違えば同一分類とみなさない設計にします。
+
+## v0.2.8第三段階：個別株の自動分類サービス
+
+`classification-rules.js`は外部値の正規化と感応度判定を行う純粋関数群です。`classification-service.js`はサーバー側だけで外部取得を行います。ブラウザーへの配信・新しいHTTP API・価格更新や保有編集への自動組み込みは追加していません。
+
+```js
+const { classifyHolding, refreshClassification } = require("./classification-service");
+const result = await classifyHolding(holding); // 候補patchを返すだけで保存しない
+await refreshClassification("holding-id"); // auto分類が欠けた保有だけ取得・保存
+await refreshClassification("holding-id", { force: true }); // 明示的な再分類
+```
+
+### 取得元と正規化
+
+- 米国株：drillr Company Profile `https://gateway.drillr.ai/api/v2/company-profile?ticker={symbol}`。`DRILLR_API_KEY`をサーバーの環境変数から取得して`X-API-KEY`ヘッダーで送ります。キー未設定は警告してスキップします。レスポンスの`ticker`・`market=US`を確認します。
+- drillrの11種類のsectorを内部コードへ明示的に変換します（例：`Technology`→`INFORMATION_TECHNOLOGY`、`Financial Services`→`FINANCIALS`）。未知値は`null`で、別セクターへの推測割当はしません。
+- 米国株industryは固定列挙せず、`normalizeIndustryCode`で大文字化し、区切り・記号を`_`へ統一して先頭末尾の`_`を除きます（例：`Software - Infrastructure`→`SOFTWARE_INFRASTRUCTURE`）。空・不明値や128文字を超える結果は`null`です。表示名は重複保存しません。
+- 日本株：既存と同じYahoo JPサーバー取得経路で`https://finance.yahoo.co.jp/quote/{symbol}.T/profile`を参照し、業種欄または企業情報の「業種分類」から取得します。`保険業`→`INSURANCE`、`情報・通信`／`情報・通信業`→`INFORMATION_COMMUNICATIONS`。33業種から内部セクターへの変換は`classification-rules.js`の取得元専用フォールバックです。未知・複数の矛盾する業種や解析不能は推測しません。
+- 業種コードは取得元依存です。米国の`SEMICONDUCTORS`と日本の`ELECTRIC_APPLIANCES`などを共通の詳細業種として扱いません。企業の実態と33業種の近似がずれる場合に備え、ユーザー上書きを維持します。
+
+### 景気感応度
+
+| 内部セクター | 感応度 |
+|---|---|
+| `MATERIALS`・`INDUSTRIALS`・`CONSUMER_DISCRETIONARY` | `CYCLICAL` |
+| `CONSUMER_STAPLES`・`HEALTH_CARE`・`UTILITIES` | `DEFENSIVE` |
+| `FINANCIALS`・`INFORMATION_TECHNOLOGY`・`COMMUNICATION_SERVICES`・`REAL_ESTATE`・`ENERGY` | `NEUTRAL` |
+
+`INFORMATION_TECHNOLOGY`かつ`SEMICONDUCTORS`の場合のみ`CYCLICAL`へ補正します。セクターが不明な場合は`NEUTRAL`を推測せず`null`とし、保存更新しません。ユーザー指定値を自動判定の入力には使いません。
+
+### 保存・失敗・競合
+
+- 保存は`database.saveAutomaticClassification`が`auto_sector_code`・`auto_industry_code`・`auto_sensitivity_code`の3列だけに対して行います。`user_*`やファンドカテゴリ、価格・数量・取得値・履歴は更新しません。
+- 新しく取得した有効なコードだけをpatchに含めます。未知・未取得の値を`null`で上書きしません。取得sectorが有効でもindustryが未取得なら、保持する既存auto industryを感応度補正に利用します。sector自体が未知なら感応度を更新しません。
+- 変更があれば保有の`updated_at`と状態のrevision／更新時刻を更新します。同一値の場合はrevisionを増やしません。旧revisionでの通常保存は既存の競合検知により拒否されます。
+- 外部取得前のrevisionと保存時のrevisionをトランザクション内で照合します。ユーザー編集・価格更新・銘柄変更が入った場合は`conflict`を返し、結果を保存しません。必要なら最新状態を読み直して明示的に再試行します。自動リトライはありません。
+- HTTP 401／429／500、ネットワーク・解析失敗、既定8秒のタイムアウトは既存分類を保持します。プロバイダーへのリダイレクトは拒否します。キー・ヘッダー・レスポンス本文・例外の生メッセージをログや戻り値へ出しません。
+- 既定の取得対象はautoの3項目に欠けがある個別株です。既存の資産種別が投資信託の場合や、ファンドカテゴリを設定済みのETF等はスキップします。ETF専用種別や名前による推測識別は追加しません。drillrがETF／fundであると明示する応答も保存しません。
+- バッチ・定期更新・取得キャッシュは未実装です。呼び出し元は個別株を対象に低頻度で実行し、不完全な応答を理由に連続リトライしない前提です。Cloudでは既存の`node --use-env-proxy server.js`起動方針を維持します。Railway設定は変更しません。
+
+スキーマはv5のままで追加マイグレーションはありません。テストはfixture/mockと一時DBを利用し、外部分類APIへ実通信しません。
 
 以下は将来の分類ロジック等に向けた検討事項です。上記マスタの定義は実装済みです。
 
@@ -202,7 +243,7 @@ const label = masters.getLabel("sensitivity", code);
 ### 現状
 
 - 第一段階では上記の分類コード保存を実装済みです。
-- セクター・景気感応度・ファンドカテゴリのマスタは実装済みです。業種の取得元、分類の自動更新と表示は後続段階で検討します。
+- セクター・景気感応度・ファンドカテゴリのマスタと個別株分類サービスは実装済みです。業種の表示名・ソース保存、既存フローとの統合、分類UIは後続段階で検討します。
 
 ### 推奨案（検討用であり未決定）
 

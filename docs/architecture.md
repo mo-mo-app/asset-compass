@@ -129,6 +129,17 @@ https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?range=1mo&interval=1d
 
 そのため、市場データ時刻とAsset Compass側の最終取得時刻は別の値です。表示上のタイムゾーン変換はブラウザーの `app.js` にある日時フォーマット処理が担当します。日時関数ごとのタイムゾーン指定が常に統一されているかは要確認です。
 
+## 個別株の分類サービス（v0.2.8）
+
+- `classification-rules.js`：drillr sector／industryの正規化、Yahoo JPの33業種変換、HTMLの業種解析、Asset Compass独自の感応度判定を行います。純粋関数で、外部通信やDB更新は行いません。
+- `classification-service.js`：`classifyHolding`で候補を取得し、`refreshClassification`で未分類または明示的な再分類を実行します。米国株はdrillr Company Profile、日本株はYahoo JPのプロフィールを利用します。`fetchImpl`・logger・timeout・repositoryを注入でき、テストはfixtureで完結します。
+- drillrキーはサーバー環境の`DRILLR_API_KEY`からヘッダーへ設定します。秘密情報をブラウザー・ログ・レスポンスへ渡さず、外部リダイレクトも許可しません。
+- `database.js`の`saveAutomaticClassification`は3つのauto列のみを更新します。ユーザー値は変更せず、参照時は既存の`getEffectiveCode`でuserを優先します。外部値は内部セクターコードへ正規化し、業種コードは取得元依存です。
+- API失敗・未知値・解析失敗では既存auto値を保持します。取得前後のrevisionが異なる場合も保存しません。
+- このサービスは既存の価格更新・保有編集・HTTPルート・UIには組み込んでいません。定期更新や投信・ETFのカテゴリ自動分類も未実装です。呼び出し頻度とUI連携は次段階で決めます。
+
+保存・正規化の詳細は[data-design.md](data-design.md)を参照してください。
+
 ## PC・スマートフォン・LANアクセス
 
 画面構造は共通で、CSSのレスポンシブ規則によってPCのサイドバーとスマートフォンの下部ナビなどを切り替えます。スマートフォンは同一LAN上からNodeサーバーへ接続し、PCと同じAPI・SQLiteデータを使います。

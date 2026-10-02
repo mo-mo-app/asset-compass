@@ -574,4 +574,32 @@ function saveState(expectedRevision, input, snapshotMetadata = null) {
   });
 }
 
-module.exports = { databasePath, db, getState, getSnapshots, migrateLocalState, saveState };
+function saveAutomaticClassification(holdingId, expectedRevision, patch) {
+  const allowed = ["auto_sector_code", "auto_industry_code", "auto_sensitivity_code"];
+  if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0) throw new Error("expectedRevision must be a non-negative integer.");
+  if (!patch || typeof patch !== "object" || Array.isArray(patch) || Object.keys(patch).some(field => !allowed.includes(field))) {
+    throw new Error("Automatic classification can update only sector, industry and sensitivity auto codes.");
+  }
+  const fields = Object.keys(patch);
+  if (fields.some(field => patch[field] === null || patch[field] === undefined)) throw new Error("Automatic classification cannot clear existing codes.");
+  classificationCodes(patch, null, "classification");
+  return inTransaction(() => {
+    const state = db.prepare("SELECT revision, initialized FROM app_state WHERE singleton_id = 1").get();
+    if (!state.initialized) return { status: "skipped", reason: "state_not_initialized" };
+    if (state.revision !== expectedRevision) return { status: "conflict", revision: state.revision };
+    const holding = db.prepare(`SELECT type, auto_fund_category_code, user_fund_category_code, ${allowed.join(", ")} FROM holdings WHERE id = ?`).get(holdingId);
+    if (!holding) return { status: "skipped", reason: "holding_not_found" };
+    if (!["日本株", "米国株"].includes(holding.type) || holding.auto_fund_category_code || holding.user_fund_category_code) {
+      return { status: "skipped", reason: "unsupported_asset" };
+    }
+    const changed = fields.filter(field => patch[field] !== holding[field]);
+    if (!changed.length) return { status: "unchanged", revision: state.revision, updatedFields: [] };
+    const now = Date.now();
+    db.prepare(`UPDATE holdings SET ${changed.map(field => `${field} = ?`).join(", ")}, updated_at = ? WHERE id = ?`)
+      .run(...changed.map(field => patch[field]), now, holdingId);
+    db.prepare("UPDATE app_state SET revision = revision + 1, updated_at = ? WHERE singleton_id = 1").run(now);
+    return { status: "updated", revision: state.revision + 1, updatedFields: changed };
+  });
+}
+
+module.exports = { databasePath, db, getState, getSnapshots, migrateLocalState, saveState, saveAutomaticClassification };
