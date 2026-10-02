@@ -1,6 +1,6 @@
 # Asset Compass データ設計
 
-この文書では、現行実装と将来予定の分類情報を分けて整理します。現行フィールドは `app.js`、`database.js`、`server.js` を確認した内容です。v0.2.8での分類項目の保存場所やコード体系は未決定です。
+この文書では、現行実装と将来予定の分類情報を分けて整理します。v0.2.8では保有資産の分類コード保存と、セクター・景気感応度・ファンドカテゴリの内部マスタを実装しています。分類取得・自動判定・UI表示は後続段階の対象です。
 
 ## 現行データ
 
@@ -151,14 +151,37 @@ Node.js側の`database.js`がSQLiteを読み書きし、PC・スマートフォ�
 | 投資信託・ETFのカテゴリ | `auto_fund_category_code` | `user_fund_category_code` |
 | 景気感応度（共通） | `auto_sensitivity_code` | `user_sensitivity_code` |
 
-- 全8項目はnullableなTEXT列です。コードは1〜128文字のASCII英数字と`_`、`.`、`:`、`-`を許可し、表示名は保存しません。正式なコードマスタ・表示名・分類体系はこの段階では定義せず、将来マスタから参照します。マスタへの存在検証もその段階で追加します。
-- 自動値とユーザー値は独立して保持します。優先順位の判定、分類API取得、自動分類、UI表示は未実装です。
+- 全8項目はnullableなTEXT列です。コードは1〜128文字のASCII英数字と`_`、`.`、`:`、`-`を許可し、表示名は保存しません。セクター・景気感応度・ファンドカテゴリの表示名は次節の独立マスタから参照します。既存DBの許容コードや保存検証は変更せず、未知のコードも保存できます。
+- 自動値とユーザー値は独立して保持します。参照関数でユーザー値を優先できますが、分類API取得、自動分類、UI表示は未実装です。
 - 新規保有・初回移行で項目がない場合は`null`です。既存保有へのPUTで項目が省略された場合は保存済みの値を維持し、明示的な`null`で解除します。空文字や表示名などコード形式に合わない値は拒否します。
 - 既存の資産種別（日本株・米国株・投資信託）は変更しません。ETF専用種別や識別ロジックは追加せず、既存の株式種別で登録したETFにもファンドカテゴリを保持できるよう、資産種別による列の制限は設けません。
 - v4→v5はトランザクション内の`ALTER TABLE ... ADD COLUMN`で追加します。既存列・価格・スナップショット・revisionは変更しません。途中失敗はロールバックします。旧DBは各既存マイグレーションを経てv5になります。
 - LocalStorageは既存の`asset-compass-v1`の状態全体をJSON保存するため、キーやキャッシュ形式の移行は不要です。既存の保有編集もオブジェクトを引き継ぐため分類値を保持します。
 
-以下は将来のマスタ・分類ロジックに向けた検討事項で、確定済みのコード定義ではありません。
+## v0.2.8第二段階：分類マスタの参照
+
+`classification-masters.js`はDB・DOM・外部APIに依存しない独立モジュールです。
+
+- `sectors`：GICS 11セクター相当の内部固定コード11件。公式GICSコードや外部サービスの分類との対応付けではありません。
+- `sensitivities`：`CYCLICAL`・`DEFENSIVE`・`NEUTRAL`の3件。
+- `fundCategories`：投資信託・ETF向け11件。
+- 各エントリは`code`・`label`・`description`・`examples`を持ち、配列・エントリ・例示配列を凍結しています。例示は説明用で、自動分類ルールではありません。
+
+```js
+const masters = require("./classification-masters");
+masters.getLabel("sector", "INFORMATION_TECHNOLOGY"); // "情報技術"
+masters.getEntry("fundCategory", "BROAD_INDEX"); // 説明・例示を含むエントリ
+const code = masters.getEffectiveCode(holding, "sensitivity");
+const label = masters.getLabel("sensitivity", code);
+```
+
+参照種別は`sector`・`sensitivity`・`fundCategory`です。`getEffectiveCode`は`industry`も受け付け、`user_xxx_code`がnull/undefinedなら`auto_xxx_code`へフォールバックします。未知のコードを別カテゴリへ変換せず、`getEntry`・`getLabel`は未設定・未知の場合に`null`を返します。`OTHER`と未設定は別です。
+
+ブラウザーでスクリプトを読み込む場合は`globalThis.AssetCompassClassificationMasters`として参照できます。今回、HTMLへの組み込みやサーバーの静的配信許可は追加していません。
+
+業種は共通固定マスタを作りません。将来、`industry_source`を別途追加して`YAHOO_JP_TSE33`／`DRILLR`など取得元ごとにコードの意味と表示名を解決する前提です。今回、取得元の判定、ソース列、業種マスタや業種表示名参照は実装しません。同じ業種コードでも取得元が違えば同一分類とみなさない設計にします。
+
+以下は将来の分類ロジック等に向けた検討事項です。上記マスタの定義は実装済みです。
 
 ### 想定する項目
 
@@ -179,7 +202,7 @@ Node.js側の`database.js`がSQLiteを読み書きし、PC・スマートフォ�
 ### 現状
 
 - 第一段階では上記の分類コード保存を実装済みです。
-- マスタ定義、取得元、分類の自動更新と表示は後続段階で検討します。
+- セクター・景気感応度・ファンドカテゴリのマスタは実装済みです。業種の取得元、分類の自動更新と表示は後続段階で検討します。
 
 ### 推奨案（検討用であり未決定）
 
