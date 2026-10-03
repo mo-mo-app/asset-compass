@@ -153,11 +153,11 @@
               <label class="goal-field"><span>現在資産</span><span class="goal-input-wrap"><input id="goal-current-assets" type="text" inputmode="decimal" autocomplete="off" aria-describedby="goal-current-help" /><span>円</span></span><small id="goal-current-help">現在の総資産を使用</small></label>
               <label class="goal-field"><span>目標資産</span><span class="goal-input-wrap"><input id="goal-target-assets" type="text" inputmode="decimal" autocomplete="off" value="100,000,000" /><span>円</span></span></label>
               <label class="goal-field"><span>毎月の積立額</span><span class="goal-input-wrap"><input id="goal-monthly-contribution" type="text" inputmode="decimal" autocomplete="off" value="0" /><span>円 / 月</span></span></label>
-              <div class="goal-field"><label for="goal-annual-return">想定年利</label><span class="goal-input-wrap"><input id="goal-annual-return" type="number" inputmode="decimal" step="any" value="7" /><span>%</span></span><div class="goal-presets" aria-label="想定年利プリセット"><button type="button" data-goal-rate="3">3%</button><button type="button" data-goal-rate="5">5%</button><button type="button" data-goal-rate="7">7%</button><button type="button" data-goal-rate="10">10%</button></div></div>
+              <div class="goal-field"><label for="goal-annual-return">想定年利</label><span class="goal-input-wrap"><input id="goal-annual-return" type="number" inputmode="decimal" step="any" value="7" /><span>%</span></span><div class="goal-presets" aria-label="想定年利プリセット"><button type="button" data-goal-rate="5">5%</button><button type="button" data-goal-rate="7">7%</button><button type="button" data-goal-rate="10">10%</button></div></div>
             </div>
             <div class="goal-form-actions">
               <p id="goal-error" class="goal-error" role="alert" hidden></p>
-              <div class="goal-button-row"><button class="button primary" type="submit">シミュレーションする</button><button class="button ghost" id="goal-save-settings" type="button">結果を目標として保存する</button></div>
+              <div class="goal-button-row"><button class="button primary" type="submit">シミュレーションする</button><button class="button primary" id="goal-save-settings" type="button">結果を目標として保存する</button></div>
               <p id="goal-settings-status" role="status" aria-live="polite"></p>
             </div>
           </form>

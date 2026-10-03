@@ -100,8 +100,11 @@ test("goal form orders five conditions, keeps rate presets on one line, and has 
   const actionRow = form.slice(form.indexOf('<div class="goal-button-row">'), form.indexOf("</div>", form.indexOf('<div class="goal-button-row">')));
   assert.equal((actionRow.match(/<button\b/g) || []).length, 2);
   assert.match(actionRow, /シミュレーションする[\s\S]*結果を目標として保存する/);
+  assert.match(actionRow, /class="button primary"[^>]*id="goal-save-settings"/);
   assert.doesNotMatch(form, /保存してTOP表示|>保存</);
-  assert.match(css, /\.goal-input-grid\{display:grid;grid-template-columns:minmax\(0,\.78fr\)[^}]+minmax\(0,1\.45fr\)/);
+  assert.match(form, /data-goal-rate="5">5%[\s\S]*data-goal-rate="7">7%[\s\S]*data-goal-rate="10">10%/);
+  assert.doesNotMatch(form, /data-goal-rate="3"/);
+  assert.match(css, /\.goal-input-grid\{display:grid;grid-template-columns:minmax\(0,1\.15fr\)[^}]+minmax\(0,\.9fr\)/);
   assert.match(css, /\.goal-presets\{display:flex;flex-wrap:nowrap/);
   assert.match(css, /\.goal-button-row\{display:flex;align-items:center;justify-content:center/);
   assert.match(css, /#goal-settings-status\{[^}]*text-align:center/);
