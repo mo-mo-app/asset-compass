@@ -63,6 +63,20 @@ test('complete auto classification and excluded assets never call the classifica
   await ui.save();
   assert.deepEqual(ui.requests.map(([method]) => method), ['PUT']);
 });
+test('opening a different holding clears the previous session cleared background while restoring its symbol', () => {
+  const ui = setup();
+  const second = { ...ui.state()[0], id: 'holding-2', name: '別の銘柄', symbol: 'SOXL' };
+  ui.context.secondHolding = second;
+  vm.runInContext('data.holdings.push(secondHolding)', ui.context);
+
+  ui.element('#holding-symbol').value = '';
+  ui.element('#holding-symbol').dataset.cleared = 'true';
+  ui.element('#holding-dialog').close();
+  ui.context.openHolding('holding-2');
+
+  assert.equal(ui.element('#holding-symbol').value, 'SOXL');
+  assert.equal(ui.element('#holding-symbol').dataset.cleared, undefined);
+});
 test('automatic results retain manual priority; reset previews and saves null user codes while retaining auto', async () => {
   const ui = setup();
   ui.context.fields = { user_sector_code: 'FINANCIALS', user_sensitivity_code: 'DEFENSIVE' };

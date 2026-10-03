@@ -1557,7 +1557,7 @@ function openHolding(id) {
   holdingFieldErrors = { quantity: "", cost: "", form: "" };
   $("#holding-form").reset();
   $("#holding-advanced-settings").open = false;
-  ["#holding-name", "#holding-quantity", "#holding-cost"].forEach(selector => {
+  ["#holding-name", "#holding-quantity", "#holding-cost", "#holding-symbol"].forEach(selector => {
     delete $(selector).dataset.cleared;
   });
   $("#holding-id").value = id || "";
