@@ -1345,9 +1345,10 @@ function normalizeIdecoAcquisitionAmount(value) {
 let holdingEditState = null;
 let holdingClassificationEditor = null;
 let holdingSaveInProgress = false;
+let holdingInstrumentKind = null;
 function needsAutomaticClassification(holding) {
   return holding && ["米国株", "日本株"].includes(holding.type) &&
-    !holding.auto_fund_category_code && !holding.user_fund_category_code &&
+    AssetCompassClassificationDisplay.resolveInstrumentKind(holding) === "STOCK" &&
     ["sector", "industry", "sensitivity"].some(kind => !holding[`auto_${kind}_code`]);
 }
 async function completeHoldingClassification(holdingId) {
@@ -1384,7 +1385,7 @@ function holdingDraftFingerprint() {
   try { classificationPatch = holdingClassificationEditor?.getPatch() || {}; }
   catch { classificationPatch = { invalid: true }; }
   return JSON.stringify([...["account", "account-category", "type", "currency", "name", "symbol", "quantity", "cost"]
-    .map(field => $(`#holding-${field}`).value), classificationPatch]);
+    .map(field => $(`#holding-${field}`).value), holdingInstrumentKind, classificationPatch]);
 }
 let holdingLookupRequest = 0;
 let holdingFieldErrors = { quantity: "", cost: "", form: "" };
@@ -1406,7 +1407,7 @@ function holdingFormContext() {
   const type = $("#holding-type").value;
   return { type, currency: $("#holding-currency").value,
     accountCategoryCode: $("#holding-account-category").value,
-    symbol: normalizeStoredSymbol(type, $("#holding-symbol").value.toUpperCase()) };
+    symbol: normalizeStoredSymbol(type, $("#holding-symbol").value.toUpperCase()), instrument_kind: holdingInstrumentKind };
 }
 function showHoldingInputError(message, invalidField = null) {
   if (invalidField) {
@@ -1464,6 +1465,11 @@ function handleHoldingClassificationChange() {
   // iDeCo still fixes the asset type to mutual funds.
   updateHoldingFormLabels();
   const current = holdingFormContext();
+  if (previous && previous.type !== current.type) {
+    holdingInstrumentKind = null;
+    if (holdingEditState) holdingEditState.instrumentKindIdentity = null;
+    holdingClassificationEditor?.setInstrumentKind(null);
+  }
   if (previous && (previous.type !== current.type || isIdecoCategory(previous.accountCategoryCode) !== isIdecoCategory(current.accountCategoryCode))) {
     clearHoldingIdentityInputs();
     clearHoldingNumbers("資産区分・口座区分が変更されたため、銘柄情報と保有数量、取得値をクリアしました。");
@@ -1482,10 +1488,12 @@ function emptyHoldingClassification() {
     [[`auto_${kind}_code`, null], [`user_${kind}_code`, null]]));
 }
 function refreshHoldingClassificationIdentity(identity) {
-  if (!holdingEditState?.original || sameHoldingIdentity(holdingEditState.classificationIdentity || holdingEditState.original, identity)) return;
-  // Keep this preview separate from persisted data. Returning to the original identity restores its codes.
-  const original = sameHoldingIdentity(holdingEditState.original, identity) ? holdingEditState.original : null;
-  holdingClassificationEditor?.open(original, identity.type);
+  if (!holdingEditState) return;
+  if (!sameHoldingIdentity(holdingEditState.classificationIdentity, identity)) {
+    // Keep this preview separate from persisted data. Returning to the original identity restores its codes.
+    const original = sameHoldingIdentity(holdingEditState.original, identity) ? holdingEditState.original : null;
+    holdingClassificationEditor?.open(original, identity.type, holdingInstrumentKind);
+  } else holdingClassificationEditor?.setInstrumentKind(holdingInstrumentKind);
   holdingEditState.classificationIdentity = { type: identity.type, symbol: identity.symbol };
 }
 function confirmHoldingSymbolChange(confirmedIdentity = holdingFormContext()) {
@@ -1523,6 +1531,7 @@ function updateHoldingFormLabels() {
   if (ideco) $("#holding-type").value = "投資信託";
   $("#holding-type").disabled = ideco;
   const isFund = ideco || type === "投資信託";
+  if (isFund) holdingInstrumentKind = null;
   $("#quantity-label").textContent = `${isFund ? "保有口数" : "保有数量"} *`;
   $("#cost-label").textContent = `${ideco ? "取得金額（円）" : isFund ? "取得基準価額（1万口あたり）" : "取得単価"} *`;
   $("#holding-quantity").placeholder = isFund ? "例：150000" : "例：100";
@@ -1533,6 +1542,7 @@ function updateHoldingFormLabels() {
   $("#fund-unit-note").hidden = !isFund;
   $("#holding-name-label").textContent = "銘柄名 *";
   holdingClassificationEditor?.setType($("#holding-type").value);
+  holdingClassificationEditor?.setInstrumentKind(holdingInstrumentKind);
   refreshIdecoAcquisitionUnitPreview();
 }
 function openHolding(id) {
@@ -1542,6 +1552,7 @@ function openHolding(id) {
   $("#holding-symbol").disabled = false;
   $("#lookup-name").disabled = false;
   holdingEditState = null;
+  holdingInstrumentKind = holding?.instrument_kind ?? null;
   holdingFieldErrors = { quantity: "", cost: "", form: "" };
   $("#holding-form").reset();
   $("#holding-advanced-settings").open = false;
@@ -1574,12 +1585,14 @@ function openHolding(id) {
     original: holding ? { ...holding, symbol: normalizeStoredSymbol(holding.type, holding.symbol.toUpperCase()) } : null,
     originalQuantity: holding?.quantity, originalCost: holding?.cost,
     confirmedIdentity: holding ? { type: holding.type, symbol: normalizeStoredSymbol(holding.type, holding.symbol.toUpperCase()) } : null,
+    classificationIdentity: holding ? { type: holding.type, symbol: normalizeStoredSymbol(holding.type, holding.symbol.toUpperCase()) } : null,
+    instrumentKindIdentity: holding ? { type: holding.type, symbol: normalizeStoredSymbol(holding.type, holding.symbol.toUpperCase()) } : null,
     classification: holdingFormContext()
   };
   refreshIdecoAcquisitionUnitPreview();
   if (typeof AssetCompassClassificationEditor !== "undefined") {
     holdingClassificationEditor ||= AssetCompassClassificationEditor.createEditor($("#holding-classifications"));
-    holdingClassificationEditor.open(holding, $("#holding-type").value);
+    holdingClassificationEditor.open(holding, $("#holding-type").value, holdingInstrumentKind);
   }
   $("#holding-form button[value='default']").disabled = holdingSaveInProgress;
   $("#holding-dialog").showModal();
@@ -1606,6 +1619,11 @@ async function lookupHoldingName() {
     if (!res.ok) throw new Error(result.error || "銘柄情報を取得できませんでした");
     if (!result.name) throw new Error("銘柄名を取得できませんでした。銘柄名を手入力してください。");
     confirmHoldingSymbolChange({ type, symbol });
+    const identity = { type, symbol };
+    const kindMatches = sameHoldingIdentity(holdingEditState?.instrumentKindIdentity, identity);
+    holdingInstrumentKind = ["STOCK", "ETF"].includes(result.instrument_kind)
+      ? result.instrument_kind : kindMatches ? holdingInstrumentKind : null;
+    if (holdingEditState) holdingEditState.instrumentKindIdentity = identity;
     refreshHoldingClassificationIdentity({ type, symbol });
     $("#holding-name").value = result.name;
     delete $("#holding-name").dataset.cleared;
@@ -1882,6 +1900,7 @@ $("#holding-form").addEventListener("submit",async e=>{
   showHoldingInputError("");
   const previousData=cloneData(data), id=$("#holding-id").value;
   const h={id:id||generateId(),accountId:$("#holding-account").value,accountCategoryCode:$("#holding-account-category").value,type,currency:$("#holding-currency").value,name:$("#holding-name").value.trim(),symbol:normalizeStoredSymbol(type,$("#holding-symbol").value.toUpperCase()),quantity,cost};
+  h.instrument_kind = sameHoldingIdentity(holdingEditState?.instrumentKindIdentity, h) ? holdingInstrumentKind : null;
   try { Object.assign(h, holdingClassificationEditor?.getPatch() || {}); }
   catch (error) {
     showHoldingInputError(error.message);

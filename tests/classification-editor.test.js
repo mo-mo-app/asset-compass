@@ -60,9 +60,10 @@ test("select/input edits produce only user fields, and each reset restores the a
     assert.equal(node.reset.disabled, true);
   }
   ui.open({ type: "投資信託", auto_fund_category_code: "BROAD_INDEX", user_fund_category_code: "HIGH_DIVIDEND" }, "投資信託");
+  assert.equal(rows.get("fundCategory").reset.hidden, true);
   rows.get("fundCategory").reset.fire("click");
   assert.deepEqual(ui.getPatch(), { user_fund_category_code: null });
-  assert.equal(rows.get("fundCategory").input.value, "BROAD_INDEX");
+  assert.equal(rows.get("fundCategory").input.value, "");
   assert.doesNotMatch(root.innerHTML, /classification-status|classification-auto|表示：|自動値：|ユーザー値：/);
 });
 
@@ -182,6 +183,45 @@ test("new stock classification defaults to automatic selects and does not expose
     assert.doesNotMatch(root.innerHTML, /classification-industry/);
     assert.deepEqual(ui.getPatch(), {});
   }
+});
+
+test("detected ETF switches fields immediately, starts unset, and exposes no automatic reset", () => {
+  const { root, rows } = editorRoot(), ui = editor.createEditor(root);
+  ui.open(null, "米国株", null);
+  assert.equal(rows.get("sector").row.hidden, false);
+  assert.equal(rows.get("fundCategory").row.hidden, true);
+  ui.setInstrumentKind("ETF");
+  assert.equal(ui.getInstrumentKind(), "ETF");
+  assert.equal(rows.get("sector").row.hidden, true);
+  assert.equal(rows.get("fundCategory").row.hidden, false);
+  assert.equal(rows.get("fundCategory").input.value, "");
+  assert.equal(rows.get("fundCategory").input.options[0].textContent, "未設定");
+  assert.equal(rows.get("fundCategory").reset.hidden, true);
+  assert.equal(rows.get("sensitivity").row.hidden, false);
+  assert.equal(rows.get("sensitivity").input.value, "");
+  assert.equal(rows.get("sensitivity").input.options[0].textContent, "未設定");
+  assert.equal(rows.get("sensitivity").reset.hidden, true);
+  rows.get("fundCategory").input.value = "";
+  rows.get("fundCategory").input.fire("change");
+  rows.get("sensitivity").input.value = "NEUTRAL";
+  rows.get("sensitivity").input.fire("change");
+  assert.deepEqual(ui.getPatch(), { user_fund_category_code: null, user_sensitivity_code: "NEUTRAL" });
+  ui.setInstrumentKind("STOCK");
+  assert.equal(rows.get("sector").row.hidden, false);
+  assert.equal(rows.get("fundCategory").row.hidden, true);
+  assert.equal(rows.get("sensitivity").input.options[0].textContent, "自動分類を使用");
+});
+
+test("legacy null instrument kinds resolve valid fund/sector values before the asset type", () => {
+  const { root, rows } = editorRoot(), ui = editor.createEditor(root);
+  ui.open({ instrument_kind: null, type: "米国株", auto_fund_category_code: "BROAD_INDEX" }, "米国株");
+  assert.equal(rows.get("fundCategory").row.hidden, false);
+  assert.equal(rows.get("sector").row.hidden, true);
+  ui.open({ instrument_kind: null, type: "日本株", auto_sector_code: "ENERGY" }, "日本株");
+  assert.equal(rows.get("sector").row.hidden, false);
+  assert.equal(rows.get("fundCategory").row.hidden, true);
+  ui.open({ instrument_kind: null, type: "日本株" }, "日本株");
+  assert.equal(rows.get("sector").row.hidden, false);
 });
 
 test("reopening selects user then auto then automatic-use fallback for each stock classification field", () => {

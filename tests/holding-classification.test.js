@@ -128,6 +128,50 @@ test("invalid classification codes reject the whole save without changing stored
   assert.deepEqual(await read(app.base), state);
 });
 
+test("instrument_kind migrates as nullable, persists through saves, preserves omission and rejects invalid values", async t => {
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), "asset-compass-instrument-kind-"));
+  const app = await startApp(folder);
+  t.after(async () => { await app.stop(); fs.rmSync(folder, { recursive: true, force: true }); });
+  const holdings = [
+    { id: "stock", accountId: "a", type: "米国株", currency: "USD", symbol: "NVDA", name: "Stock", quantity: 1, cost: 1, instrument_kind: "STOCK" },
+    { id: "etf", accountId: "a", type: "米国株", currency: "USD", symbol: "SOXL", name: "ETF", quantity: 1, cost: 1, instrument_kind: "ETF" },
+    { id: "unknown", accountId: "a", type: "日本株", currency: "JPY", symbol: "7203", name: "Unknown", quantity: 1, cost: 1 },
+    { id: "fund", accountId: "a", type: "投資信託", currency: "JPY", symbol: "03311187", name: "Fund", quantity: 1, cost: 1 }
+  ];
+  const imported = await fetch(app.base + "/api/v1/migrate-local-storage", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ data: { accounts: [{ id: "a", name: "口座" }], holdings } }) });
+  assert.equal(imported.status, 201);
+  let state = await imported.json();
+  assert.deepEqual(state.data.holdings.map(holding => holding.instrument_kind), ["STOCK", "ETF", null, null]);
+  const invalidValues = ["FUND", "stock", "", "UNKNOWN", 1, false];
+  for (const value of invalidValues) {
+    const invalid = structuredClone(state.data);
+    invalid.holdings[0].instrument_kind = value;
+    await put(app.base, state, invalid, 400);
+  }
+  const invalidFund = structuredClone(state.data);
+  invalidFund.holdings[3].instrument_kind = "ETF";
+  await put(app.base, state, invalidFund, 400);
+  const omitted = structuredClone(state.data);
+  delete omitted.holdings[1].instrument_kind;
+  state = await put(app.base, state, omitted);
+  assert.equal(state.data.holdings.find(holding => holding.id === "etf").instrument_kind, "ETF");
+  const changedIdentity = structuredClone(state.data);
+  const etf = changedIdentity.holdings.find(holding => holding.id === "etf");
+  etf.symbol = "VOO";
+  delete etf.instrument_kind;
+  state = await put(app.base, state, changedIdentity);
+  assert.equal(state.data.holdings.find(holding => holding.id === "etf").instrument_kind, null);
+  const { DatabaseSync } = require("node:sqlite");
+  const db = new DatabaseSync(path.join(folder, "state.sqlite"));
+  assert.equal(db.prepare("PRAGMA user_version").get().user_version, 6);
+  const column = db.prepare("PRAGMA table_info(holdings)").all().find(item => item.name === "instrument_kind");
+  assert.equal(column.notnull, 0);
+  assert.throws(() => db.prepare("UPDATE holdings SET instrument_kind = 'FUND' WHERE id = 'stock'").run(), /CHECK constraint/);
+  assert.throws(() => db.prepare("UPDATE holdings SET instrument_kind = 'ETF' WHERE id = 'fund'").run(), /CHECK constraint/);
+  db.close();
+});
+
 function v4Database(file) {
   const db = new DatabaseSync(file);
   db.exec(`
@@ -156,7 +200,7 @@ function migrate(file) {
   return spawnSync(process.execPath, ["-e", "require('./database').db.close()"], { cwd: root, env: { ...process.env, ASSET_COMPASS_DB_PATH: file } });
 }
 
-test("v4 migration adds nullable code columns and preserves all existing rows on repeated startup", t => {
+test("v4 migration adds nullable classification and instrument columns without rewriting existing rows", t => {
   const folder = fs.mkdtempSync(path.join(os.tmpdir(), "asset-compass-v5-"));
   t.after(() => fs.rmSync(folder, { recursive: true, force: true }));
   const file = path.join(folder, "state.sqlite");
@@ -168,10 +212,14 @@ test("v4 migration adds nullable code columns and preserves all existing rows on
     const result = migrate(file);
     assert.equal(result.status, 0, result.stderr.toString());
     const db = new DatabaseSync(file);
-    assert.equal(db.prepare("PRAGMA user_version").get().user_version, 5);
+    assert.equal(db.prepare("PRAGMA user_version").get().user_version, 6);
     for (const table of tables) {
       const rows = db.prepare(`SELECT * FROM ${table}`).all();
-      if (table === "holdings") for (const row of rows) for (const field of fields) { assert.equal(row[field], null); delete row[field]; }
+      if (table === "holdings") for (const row of rows) {
+        assert.equal(row.instrument_kind, null, "migration leaves the existing instrument kind unknown");
+        delete row.instrument_kind;
+        for (const field of fields) { assert.equal(row[field], null); delete row[field]; }
+      }
       assert.deepEqual(rows, before[table]);
     }
     assert.deepEqual(db.prepare("PRAGMA foreign_key_check").all(), []);

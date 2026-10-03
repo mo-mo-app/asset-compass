@@ -25,6 +25,18 @@ test("unconfigured and unknown classifications are omitted without exposing indu
   assert.deepEqual(display.getDisplayClassifications({ type: "日本株", auto_sector_code: "MATERIALS" }).map(item => item.value), ["素材"]);
 });
 
+test("instrument kind resolution prioritizes explicit kind, valid classifications, then the legacy type", () => {
+  assert.equal(display.resolveInstrumentKind({ type: "米国株", instrument_kind: "ETF", auto_sector_code: "ENERGY" }), "ETF");
+  assert.equal(display.resolveInstrumentKind({ type: "日本株", instrument_kind: "STOCK", auto_fund_category_code: "BROAD_INDEX" }), "STOCK");
+  assert.equal(display.resolveInstrumentKind({ type: "米国株", instrument_kind: null, user_fund_category_code: "BROAD_INDEX", auto_sector_code: "ENERGY" }), "ETF");
+  assert.equal(display.resolveInstrumentKind({ type: "日本株", instrument_kind: null, auto_sector_code: "ENERGY" }), "STOCK");
+  assert.equal(display.resolveInstrumentKind({ type: "米国株", instrument_kind: null, auto_fund_category_code: "UNKNOWN", auto_sector_code: "UNKNOWN" }), "STOCK");
+  assert.equal(display.resolveInstrumentKind({ type: "投資信託", auto_fund_category_code: "BROAD_INDEX" }), null);
+  assert.deepEqual(display.getDisplayClassifications({ type: "日本株", instrument_kind: "ETF", user_fund_category_code: "HIGH_DIVIDEND", user_sensitivity_code: "DEFENSIVE" }).map(item => item.value), ["高配当", "ディフェンシブ"]);
+  assert.deepEqual(display.getDisplayClassifications({ type: "米国株", instrument_kind: "ETF", auto_sector_code: "ENERGY", auto_sensitivity_code: "CYCLICAL" }).map(item => item.value), ["景気敏感"]);
+  assert.deepEqual(display.getDisplayClassifications({ type: "米国株", instrument_kind: "STOCK", auto_fund_category_code: "BROAD_INDEX", auto_sector_code: "ENERGY" }).map(item => item.value), ["エネルギー"]);
+});
+
 test("holding rows render compact non-industry pills under the ticker using escaped master labels", () => {
   const ui = prepare({ type: "米国株", currency: "USD", symbol: "NVDA" });
   const row = ui.context.holdingRow({

@@ -136,32 +136,44 @@ async function marketWeather() {
   }));
   return { apiVersion: 1, markets };
 }
+async function exactStockSearch(quoteSymbol) {
+  const response = await fetch(`https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(quoteSymbol)}&quotesCount=10&newsCount=0`, {headers:{"User-Agent":"AssetCompass/1.0"}});
+  if (!response.ok) return null;
+  const results = (await response.json()).quotes;
+  for (const result of Array.isArray(results) ? results : []) {
+    if (typeof result?.symbol !== "string" || result.symbol.toUpperCase() !== quoteSymbol.toUpperCase() ||
+        !["EQUITY", "ETF"].includes(result.quoteType)) continue;
+    return { name: [result.longname, result.shortname].find(value => typeof value === "string" && value.trim())?.trim() || null,
+      instrument_kind: result.quoteType === "ETF" ? "ETF" : "STOCK" };
+  }
+  return null;
+}
 async function stockName(symbol, type) {
   const quoteSymbol = toQuoteSymbol(type, symbol);
   if (!/^[A-Z0-9.=^\-]+$/i.test(quoteSymbol)) throw new Error("Invalid symbol");
+  let name, originalError;
   try {
     const response = await fetch(`https://finance.yahoo.co.jp/quote/${encodeURIComponent(quoteSymbol)}`, {headers:{"User-Agent":"Mozilla/5.0 (Asset Compass)"}});
     if (!response.ok) throw new Error("Yahoo!ファイナンスで銘柄コードが見つかりません");
     const html = await response.text();
     const title = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1];
     if (!title) throw new Error("Yahoo!ファイナンスから銘柄名を取得できませんでした");
-    const name = title.replace(/\s*[-｜|]\s*Yahoo!?ファイナンス.*$/i, "").replace(/[【〖][^】〗]*[】〗].*$/, "").replace(/&amp;/g, "&").trim();
+    name = title.replace(/\s*[-｜|]\s*Yahoo!?ファイナンス.*$/i, "").replace(/[【〖][^】〗]*[】〗].*$/, "").replace(/&amp;/g, "&").trim();
     if (!name) throw new Error("Yahoo!ファイナンスから銘柄名を取得できませんでした");
-    return {name};
-  } catch (originalError) {
+  } catch (error) {
+    originalError = error;
+  }
+  if (name) {
+    let instrument;
+    try { instrument = await exactStockSearch(quoteSymbol); } catch { /* Name lookup still succeeds when type enrichment is unavailable. */ }
+    return { name, ...(instrument ? { instrument_kind: instrument.instrument_kind } : {}) };
+  }
+  {
     // Preserve Japanese names and legacy Japanese-symbol behavior. Old US clients may omit type.
     if (type !== "米国株" && (type || /\.T$/i.test(quoteSymbol))) throw originalError;
     try {
-      const response = await fetch(`https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(quoteSymbol)}&quotesCount=10&newsCount=0`, {headers:{"User-Agent":"AssetCompass/1.0"}});
-      if (response.ok) {
-        const results = (await response.json()).quotes;
-        for (const result of Array.isArray(results) ? results : []) {
-          if (typeof result?.symbol !== "string" || result.symbol.toUpperCase() !== quoteSymbol.toUpperCase() ||
-              !["EQUITY", "ETF"].includes(result.quoteType)) continue;
-          const name = [result.longname, result.shortname].find(value => typeof value === "string" && value.trim());
-          if (name) return { name: name.trim() };
-        }
-      }
+      const instrument = await exactStockSearch(quoteSymbol);
+      if (instrument?.name) return { ...instrument, name: instrument.name };
     } catch { /* Preserve the original error when the fallback is also unavailable. */ }
     throw originalError;
   }

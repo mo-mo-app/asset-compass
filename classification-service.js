@@ -1,6 +1,7 @@
 // Server-only service. It is deliberately not served to the browser or wired into price refresh.
 const { normalizeStoredSymbol, toQuoteSymbol } = require("./symbols");
 const { normalizeDrillrSector, normalizeIndustryCode, classifySensitivity, parseYahooJapaneseIndustry } = require("./classification-rules");
+const { resolveInstrumentKind } = require("./classification-display");
 
 function warn(logger, message) {
   // Never log response bodies, headers, API keys, symbols or exception messages.
@@ -8,7 +9,7 @@ function warn(logger, message) {
 }
 
 function isStock(holding) {
-  return ["米国株", "日本株"].includes(holding?.type) && !holding.auto_fund_category_code && !holding.user_fund_category_code;
+  return ["米国株", "日本株"].includes(holding?.type) && resolveInstrumentKind(holding) === "STOCK";
 }
 
 function patchFor(sectorCode, industryCode, holding) {

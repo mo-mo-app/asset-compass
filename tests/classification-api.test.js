@@ -82,6 +82,15 @@ test('funds and known ETFs skip providers, provider ETF skips auto saving, and c
   assert.equal((await fetch(api.base + '/classification-service.js')).status, 404);
 });
 
+test('instrument_kind ETF skips stock classification even when its other auto fields are empty', async t => {
+  const api = await setup(t, [holding('etf', { instrument_kind: 'ETF' })]);
+  const result = await api.classify('etf');
+  assert.equal(result.status, 200);
+  assert.equal(result.body.classification.reason, 'unsupported_asset');
+  assert.deepEqual(api.requests(), []);
+  assert.equal((await api.read()).data.holdings[0].instrument_kind, 'ETF');
+});
+
 test('SOXL holding save remains successful when the existing service skips a provider-reported ETF', async t => {
   const api = await setup(t); api.setMode('etf');
   const state = await api.read();

@@ -1,7 +1,7 @@
 (function (root, factory) {
-  if (typeof module === "object" && module.exports) module.exports = factory(require("./classification-masters"));
-  else root.AssetCompassClassificationEditor = factory(root.AssetCompassClassificationMasters);
-})(globalThis, function (masters) {
+  if (typeof module === "object" && module.exports) module.exports = factory(require("./classification-masters"), require("./classification-display"));
+  else root.AssetCompassClassificationEditor = factory(root.AssetCompassClassificationMasters, root.AssetCompassClassificationDisplay);
+})(globalThis, function (masters, classificationDisplay) {
   const fields = Object.freeze([
     { kind: "sector", suffix: "sector", label: "セクター", master: "sectors", group: "stock" },
     { kind: "industry", suffix: "industry", label: "業種コード", group: "stock" },
@@ -36,9 +36,7 @@
       return copy;
     }) };
   }
-  function inferKind(holding) {
-    return holding?.type === "投資信託" || holding?.user_fund_category_code != null || holding?.auto_fund_category_code != null ? "fund" : "stock";
-  }
+  const inferKind = holding => classificationDisplay.resolveClassificationGroup(holding);
   function createEditor(root) {
     // Industry codes remain part of the classification schema and save flow, but are
     // intentionally not exposed in this editor so a later analysis UI can reuse them.
@@ -54,26 +52,27 @@
       const row = root.querySelector(`[data-classification="${field.kind}"]`);
       return [field.kind, { row, input: row.querySelector("input, select"), reset: row.querySelector(".classification-reset") }];
     }));
-    let original = {}, draft = {}, type = "日本株";
+    let original = {}, draft = {}, type = "日本株", instrumentKind = null;
     const dirty = new Set();
-    const currentKind = () => inferKind({ ...original, type });
+    const currentKind = () => inferKind({ ...original, ...draft, type, instrument_kind: instrumentKind });
     const active = field => field.group === "both" || field.group === currentKind();
 
     function renderField(field, updateInput = true) {
       const node = nodes.get(field.kind);
       const user = draft[field.user] ?? null, auto = original[field.auto] ?? null;
-      const effective = user ?? auto;
+      const effective = currentKind() === "fund" ? user : user ?? auto;
       node.row.hidden = !active(field);
       node.input.disabled = !active(field);
       if (updateInput && field.master) {
         const document = root.ownerDocument;
         const option = (label, value) => { const item = document.createElement("option"); item.textContent = label; item.value = value; return item; };
-        const options = [option("自動分類を使用", ""), ...masters[field.master].map(entry => option(entry.label, entry.code))];
+        const options = [option(currentKind() === "fund" ? "未設定" : "自動分類を使用", ""), ...masters[field.master].map(entry => option(entry.label, entry.code))];
         if (effective != null && !masters.getEntry(field.kind, effective)) options.push(option(`既存コード：${effective}`, effective));
         node.input.replaceChildren(...options);
       }
       if (updateInput) node.input.value = effective ?? "";
       node.reset.disabled = user == null;
+      node.reset.hidden = currentKind() === "fund";
     }
     function render() {
       for (const field of editableFields) renderField(field);
@@ -97,11 +96,16 @@
       });
     }
     return {
-      open(holding, assetType) {
+      open(holding, assetType, detectedInstrumentKind) {
         original = { ...(holding || {}) }; draft = { ...original }; dirty.clear();
-        type = assetType; render();
+        type = assetType;
+        instrumentKind = detectedInstrumentKind === "STOCK" || detectedInstrumentKind === "ETF"
+          ? detectedInstrumentKind : holding?.instrument_kind ?? null;
+        render();
       },
       setType(assetType) { type = assetType; render(); },
+      setInstrumentKind(value) { instrumentKind = value === "STOCK" || value === "ETF" ? value : null; render(); },
+      getInstrumentKind() { return instrumentKind; },
       getPatch() {
         const patch = {};
         for (const field of editableFields) {

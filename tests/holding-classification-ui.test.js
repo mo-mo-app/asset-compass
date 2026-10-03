@@ -94,6 +94,43 @@ test('a partial manual edit writes only that user field and still fetches missin
   assert.equal(ui.state()[0].user_industry_code, undefined);
   assert.equal(ui.state()[0].auto_sector_code, auto.auto_sector_code);
 });
+test('manual stock entry keeps null kind, and exact ETF lookup switches editor state and skips auto classification', async () => {
+  const manual = setup({ existing: false, type: '米国株', currency: 'USD', symbol: 'AAPL' });
+  await manual.save();
+  assert.equal(manual.state()[0].instrument_kind, null);
+  assert.deepEqual(manual.requests.map(([method]) => method), ['PUT', 'POST'], 'unknown stock-equivalent state still receives automatic classification');
+
+  const equity = setup({ existing: false, type: '米国株', currency: 'USD', symbol: 'NVDA' });
+  const equityFetch = equity.context.fetch;
+  equity.context.fetch = async (url, options = {}) => url.startsWith('/api/name?')
+    ? equity.api.response({ name: 'NVIDIA', instrument_kind: 'STOCK' })
+    : equityFetch(url, options);
+  await vm.runInContext('lookupHoldingName()', equity.context);
+  assert.equal(equity.rows.get('sector').row.hidden, false);
+  await equity.save();
+  assert.equal(equity.state()[0].instrument_kind, 'STOCK');
+  assert.deepEqual(equity.requests.map(([method]) => method), ['PUT', 'POST']);
+
+  const ui = setup({ existing: false, type: '米国株', currency: 'USD', symbol: 'SOXL' });
+  const fetch = ui.context.fetch;
+  ui.context.fetch = async (url, options = {}) => url.startsWith('/api/name?')
+    ? ui.api.response({ name: 'Direxion Semiconductor ETF', instrument_kind: 'ETF' })
+    : fetch(url, options);
+  await vm.runInContext('lookupHoldingName()', ui.context);
+  assert.equal(ui.rows.get('sector').row.hidden, true);
+  assert.equal(ui.rows.get('fundCategory').row.hidden, false);
+  assert.equal(ui.rows.get('fundCategory').input.value, '');
+  assert.equal(ui.rows.get('fundCategory').input.options[0].textContent, '未設定');
+  assert.equal(ui.rows.get('fundCategory').reset.hidden, true);
+  assert.equal(ui.rows.get('sensitivity').input.value, '');
+  await ui.save();
+  assert.equal(ui.state()[0].instrument_kind, 'ETF');
+  assert.deepEqual(ui.requests.map(([method]) => method), ['PUT'], 'ETF does not call classification API');
+  ui.context.openHolding(ui.state()[0].id);
+  assert.equal(ui.rows.get('sector').row.hidden, true);
+  assert.equal(ui.rows.get('fundCategory').row.hidden, false);
+  assert.equal(ui.rows.get('fundCategory').reset.hidden, true);
+});
 for (const failure of ['provider', 'timeout', 'http', 'conflict']) test(`${failure} classification failure retains the successful holding save`, async () => {
   const ui = setup();
   ui.element('#holding-name').value = '保存された銘柄';

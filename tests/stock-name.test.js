@@ -44,18 +44,30 @@ function nameApi(jpResponse, searchResponse) {
   } };
 }
 
-test("SOXL falls back after Yahoo Japan 404 and returns the ETF longname", async () => {
+test("SOXL falls back after Yahoo Japan 404 and returns the name plus ETF kind", async () => {
   const api = nameApi(jpMissing, url => { assert.equal(url.searchParams.get("q"), "SOXL"); return search([soxl]); });
-  assert.deepEqual(await api.request("SOXL"), { status: 200, body: { name: soxl.longname } });
+  assert.deepEqual(await api.request("SOXL"), { status: 200, body: { name: soxl.longname, instrument_kind: "ETF" } });
   assert.deepEqual(api.requests.map(url => url.hostname), ["finance.yahoo.co.jp", "query1.finance.yahoo.com"]);
   assert.equal(api.requests[0].pathname, "/quote/SOXL");
 });
 
-test("NVDA keeps its Japanese name and never calls search when Yahoo Japan succeeds", async () => {
+test("NVDA keeps its Japanese name and uses the exact Yahoo quote type", async () => {
   const api = nameApi(() => new Response("<title>エヌビディア【NVDA】：株価・株式情報 - Yahoo!ファイナンス</title>"),
-    () => assert.fail("Successful Japanese name must not trigger a fallback"));
+    () => search([{ symbol: "NVDA", quoteType: "EQUITY", longname: "NVIDIA Corporation" }]));
+  assert.deepEqual(await api.request("NVDA"), { status: 200, body: { name: "エヌビディア", instrument_kind: "STOCK" } });
+  assert.equal(api.requests.length, 2);
+});
+
+test("name lookup remains successful and leaves instrument kind unset when type enrichment fails", async () => {
+  const api = nameApi(() => new Response("<title>エヌビディア【NVDA】：株価・株式情報 - Yahoo!ファイナンス</title>"),
+    () => { throw new Error("metadata unavailable"); });
   assert.deepEqual(await api.request("NVDA"), { status: 200, body: { name: "エヌビディア" } });
-  assert.equal(api.requests.length, 1);
+});
+
+test("Japanese stock tickers use an exact Yahoo quote type when available", async () => {
+  const api = nameApi(() => new Response("<title>トヨタ自動車【7203】：株価・株式情報 - Yahoo!ファイナンス</title>"),
+    url => { assert.equal(url.searchParams.get("q"), "7203.T"); return search([{ symbol: "7203.T", quoteType: "EQUITY", longname: "Toyota" }]); });
+  assert.deepEqual(await api.request("7203", "日本株"), { status: 200, body: { name: "トヨタ自動車", instrument_kind: "STOCK" } });
 });
 
 test("similar tickers, other markets, crypto and options cannot substitute for an exact SOXL match", async () => {
@@ -73,7 +85,7 @@ test("exact matching accepts only EQUITY and ETF quote types", async () => {
     assert.equal((await api.request("SOXL")).status, 502, `Must reject ${quoteType}`);
   }
   const api = nameApi(jpMissing, () => search([{ symbol: "NVDA", quoteType: "EQUITY", longname: "NVIDIA Corporation" }]));
-  assert.deepEqual(await api.request("NVDA"), { status: 200, body: { name: "NVIDIA Corporation" } });
+  assert.deepEqual(await api.request("NVDA"), { status: 200, body: { name: "NVIDIA Corporation", instrument_kind: "STOCK" } });
 });
 
 test("longname wins over shortname, and missing or blank longname uses shortname", async () => {

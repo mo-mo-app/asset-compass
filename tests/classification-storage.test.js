@@ -85,7 +85,7 @@ test("automatic classification persists three auto fields while preserving user 
   run(folder, `
     const expected = JSON.parse(fs.readFileSync(require('node:path').join(require('node:path').dirname(storage.databasePath), 'expected.json')));
     assert.deepEqual(JSON.parse(JSON.stringify(storage.getState())), expected);
-    assert.equal(storage.db.prepare('PRAGMA user_version').get().user_version, 5);
+    assert.equal(storage.db.prepare('PRAGMA user_version').get().user_version, 6);
   `);
 });
 
