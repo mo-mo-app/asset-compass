@@ -243,9 +243,9 @@ function runMigrations() {
       db.exec(`
         CREATE TABLE asset_goal_settings (
           singleton_id INTEGER NOT NULL PRIMARY KEY CHECK (singleton_id = 1),
-          target_amount REAL NOT NULL CHECK (target_amount > 0),
+          target_amount INTEGER NOT NULL CHECK (typeof(target_amount) = 'integer' AND target_amount > 0),
           annual_return_rate REAL NOT NULL CHECK (annual_return_rate > -100),
-          monthly_contribution REAL NOT NULL CHECK (monthly_contribution >= 0),
+          monthly_contribution INTEGER NOT NULL CHECK (typeof(monthly_contribution) = 'integer' AND monthly_contribution >= 0),
           start_month TEXT NOT NULL CHECK (
             length(start_month) = 7 AND
             substr(start_month, 1, 4) GLOB '[0-9][0-9][0-9][0-9]' AND
@@ -686,19 +686,22 @@ function getAssetGoalSettings() {
 function saveAssetGoalSettings(input) {
   if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("settings must be an object.");
   const { target_amount, annual_return_rate, monthly_contribution, start_month, show_on_dashboard } = input;
-  if (typeof target_amount !== "number" || !Number.isFinite(target_amount) || target_amount <= 0) {
-    throw new Error("target_amount must be a finite number greater than zero.");
+  if (typeof target_amount !== "number" || !Number.isSafeInteger(target_amount) || target_amount <= 0) {
+    throw new Error("target_amount must be a positive integer.");
   }
   if (typeof annual_return_rate !== "number" || !Number.isFinite(annual_return_rate) || annual_return_rate <= -100) {
     throw new Error("annual_return_rate must be a finite number greater than -100.");
   }
-  if (typeof monthly_contribution !== "number" || !Number.isFinite(monthly_contribution) || monthly_contribution < 0) {
-    throw new Error("monthly_contribution must be a finite non-negative number.");
+  if (typeof monthly_contribution !== "number" || !Number.isSafeInteger(monthly_contribution) || monthly_contribution < 0) {
+    throw new Error("monthly_contribution must be a non-negative integer.");
   }
   if (typeof start_month !== "string" || !/^\d{4}-(0[1-9]|1[0-2])$/.test(start_month) || start_month.startsWith("0000")) {
     throw new Error("start_month must be a valid YYYY-MM month.");
   }
-  if (typeof show_on_dashboard !== "boolean") throw new Error("show_on_dashboard must be a boolean.");
+  if (show_on_dashboard !== undefined && typeof show_on_dashboard !== "boolean") {
+    throw new Error("show_on_dashboard must be a boolean when provided.");
+  }
+  const effectiveShowOnDashboard = show_on_dashboard ?? getAssetGoalSettings()?.show_on_dashboard ?? false;
   db.prepare(`
     INSERT INTO asset_goal_settings (
       singleton_id, target_amount, annual_return_rate, monthly_contribution, start_month, show_on_dashboard
@@ -709,7 +712,7 @@ function saveAssetGoalSettings(input) {
       monthly_contribution = excluded.monthly_contribution,
       start_month = excluded.start_month,
       show_on_dashboard = excluded.show_on_dashboard
-  `).run(target_amount, annual_return_rate, monthly_contribution, start_month, Number(show_on_dashboard));
+  `).run(target_amount, annual_return_rate, monthly_contribution, start_month, Number(effectiveShowOnDashboard));
   return getAssetGoalSettings();
 }
 

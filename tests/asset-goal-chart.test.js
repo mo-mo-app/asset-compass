@@ -69,7 +69,7 @@ test("saved goal settings restore and save inputs separately from current assets
   context.fetch = async (_url, options) => {
     if (!options?.method) return { ok: true, json: async () => ({ settings: persisted }) };
     savedBody = JSON.parse(options.body).settings;
-    persisted = savedBody;
+    persisted = { ...persisted, ...savedBody };
     return { ok: true, json: async () => ({ settings: persisted }) };
   };
   context.showAppView = view => { topView = view; };
@@ -83,11 +83,15 @@ test("saved goal settings restore and save inputs separately from current assets
   assert.equal(element("#goal-current-assets").value, "4,500,000", "current assets are not part of the saved settings");
 
   await context.saveAssetGoalSettings(false);
-  assert.deepEqual(savedBody, settings);
+  assert.equal(savedBody.show_on_dashboard, undefined, "ordinary save leaves the dashboard preference untouched");
+  assert.equal(persisted.show_on_dashboard, false);
   assert.equal(topView, null);
   await context.saveAssetGoalSettings(true);
   assert.equal(savedBody.show_on_dashboard, true);
   assert.equal(topView, null, "saving for TOP keeps the goal details open");
+  await context.saveAssetGoalSettings(false);
+  assert.equal(savedBody.show_on_dashboard, undefined, "later ordinary save still omits the dashboard preference");
+  assert.equal(persisted.show_on_dashboard, true, "ordinary save preserves the enabled dashboard preference");
   assert.equal(element("#goal-settings-status").textContent, "目標設定を保存しました。");
 });
 

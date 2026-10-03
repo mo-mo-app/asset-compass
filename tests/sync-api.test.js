@@ -94,13 +94,23 @@ test("SQLite state API migrates once, saves by revision, rejects stale writes, a
   });
   assert.equal(updatedGoalSave.status, 200);
   assert.deepEqual((await updatedGoalSave.json()).settings, updatedGoalSettings, "updating uses the same single settings row");
+  const ordinaryGoalUpdate = { ...updatedGoalSettings, target_amount: 93000000 };
+  delete ordinaryGoalUpdate.show_on_dashboard;
+  const ordinaryGoalSave = await fetch(goalSettingsUrl, {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ settings: ordinaryGoalUpdate })
+  });
+  assert.equal(ordinaryGoalSave.status, 200);
+  const ordinaryGoalSettings = { ...ordinaryGoalUpdate, show_on_dashboard: true };
+  assert.deepEqual((await ordinaryGoalSave.json()).settings, ordinaryGoalSettings, "ordinary saves preserve show_on_dashboard");
   const goalSettingsDb = new DatabaseSync(dbPath);
   assert.equal(goalSettingsDb.prepare("SELECT count(*) AS count FROM asset_goal_settings").get().count, 1);
   goalSettingsDb.close();
   for (const invalidSettings of [
     { target_amount: 0 },
+    { target_amount: 1.5 },
     { annual_return_rate: -100 },
     { monthly_contribution: -1 },
+    { monthly_contribution: 1.5 },
     { start_month: "2026-13" },
     { show_on_dashboard: 1 }
   ]) {
@@ -110,7 +120,7 @@ test("SQLite state API migrates once, saves by revision, rejects stale writes, a
     });
     assert.equal(response.status, 400, `${Object.keys(invalidSettings)[0]} is validated`);
   }
-  assert.deepEqual(await (await fetch(goalSettingsUrl)).json(), { settings: updatedGoalSettings }, "invalid updates leave the last saved settings intact");
+  assert.deepEqual(await (await fetch(goalSettingsUrl)).json(), { settings: ordinaryGoalSettings }, "invalid updates leave the last saved settings intact");
   assert.equal((await (await fetch(`${base}/api/v1/state`)).json()).revision, 0, "goal settings do not advance holdings revision");
 
   const localData = {
@@ -291,7 +301,7 @@ test("SQLite state API migrates once, saves by revision, rejects stale writes, a
 
   await startServer();
   const afterRestart = await (await fetch(`${base}/api/v1/state`)).json();
-  assert.deepEqual(await (await fetch(goalSettingsUrl)).json(), { settings: updatedGoalSettings }, "asset goal settings persist across server restarts");
+  assert.deepEqual(await (await fetch(goalSettingsUrl)).json(), { settings: ordinaryGoalSettings }, "asset goal settings persist across server restarts");
   assert.equal(afterRestart.revision, 4);
   assert.equal(afterRestart.data.usdJpyRate, 159.82);
   assert.equal(afterRestart.data.holdings[0].quantity, 3);
@@ -481,5 +491,16 @@ test("v6 migration adds the single asset goal settings table without changing ho
   assert.deepEqual({ ...upgraded.prepare("SELECT * FROM holdings").get() }, { id: "keep-me", symbol: "7203.T" });
   assert.deepEqual(upgraded.prepare("SELECT * FROM asset_goal_settings").all(), []);
   assert.equal(upgraded.prepare("SELECT count(*) AS count FROM sqlite_master WHERE type = 'table' AND name = 'asset_goal_settings'").get().count, 1);
+  const goalColumns = upgraded.prepare("PRAGMA table_info(asset_goal_settings)").all();
+  assert.equal(goalColumns.find(column => column.name === "target_amount").type, "INTEGER");
+  assert.equal(goalColumns.find(column => column.name === "monthly_contribution").type, "INTEGER");
+  assert.throws(() => upgraded.prepare(`
+    INSERT INTO asset_goal_settings (singleton_id, target_amount, annual_return_rate, monthly_contribution, start_month, show_on_dashboard)
+    VALUES (1, 1.5, 5, 0, '2026-10', 0)
+  `).run(), /constraint/i, "the schema rejects fractional yen amounts");
+  assert.throws(() => upgraded.prepare(`
+    INSERT INTO asset_goal_settings (singleton_id, target_amount, annual_return_rate, monthly_contribution, start_month, show_on_dashboard)
+    VALUES (1, 1, 5, 0.5, '2026-10', 0)
+  `).run(), /constraint/i, "the schema rejects fractional monthly contributions");
   upgraded.close();
 });

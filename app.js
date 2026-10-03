@@ -706,7 +706,7 @@ async function saveAssetGoalSettings(showOnDashboard = false) {
     annual_return_rate: annualReturnRaw === "" ? NaN : Number(annualReturnRaw),
     monthly_contribution: parseGoalSettingNumber("#goal-monthly-contribution"),
     start_month: $("#goal-start-month").value,
-    show_on_dashboard: Boolean(showOnDashboard)
+    ...(showOnDashboard ? { show_on_dashboard: true } : {})
   };
   settingsStatus.textContent = "";
   saveButtons.forEach(button => { button.disabled = true; });
