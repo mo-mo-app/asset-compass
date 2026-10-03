@@ -1462,7 +1462,19 @@ function handleHoldingClassificationChange() {
 }
 function handleHoldingAccountCategoryChange() { handleHoldingClassificationChange(); }
 function sameHoldingIdentity(left, right) {
-  return Boolean(left && right && left.type === right.type && left.symbol === right.symbol);
+  return Boolean(left && right && left.type === right.type &&
+    normalizeStoredSymbol(left.type, left.symbol).toUpperCase() === normalizeStoredSymbol(right.type, right.symbol).toUpperCase());
+}
+function emptyHoldingClassification() {
+  return Object.fromEntries(["sector", "industry", "sensitivity", "fund_category"].flatMap(kind =>
+    [[`auto_${kind}_code`, null], [`user_${kind}_code`, null]]));
+}
+function refreshHoldingClassificationIdentity(identity) {
+  if (!holdingEditState?.original || sameHoldingIdentity(holdingEditState.classificationIdentity || holdingEditState.original, identity)) return;
+  // Keep this preview separate from persisted data. Returning to the original identity restores its codes.
+  const original = sameHoldingIdentity(holdingEditState.original, identity) ? holdingEditState.original : null;
+  holdingClassificationEditor?.open(original, identity.type);
+  holdingEditState.classificationIdentity = { type: identity.type, symbol: identity.symbol };
 }
 function confirmHoldingSymbolChange(confirmedIdentity = holdingFormContext()) {
   if (!holdingEditState) return false;
@@ -1499,8 +1511,8 @@ function updateHoldingFormLabels() {
   if (ideco) $("#holding-type").value = "投資信託";
   $("#holding-type").disabled = ideco;
   const isFund = ideco || type === "投資信託";
-  $("#quantity-label").textContent = isFund ? "保有口数" : "保有数量";
-  $("#cost-label").textContent = ideco ? "取得金額（円）" : isFund ? "取得基準価額（1万口あたり）" : "取得単価";
+  $("#quantity-label").textContent = `${isFund ? "保有口数" : "保有数量"} *`;
+  $("#cost-label").textContent = `${ideco ? "取得金額（円）" : isFund ? "取得基準価額（1万口あたり）" : "取得単価"} *`;
   $("#holding-quantity").placeholder = isFund ? "例：150000" : "例：100";
   $("#holding-cost").placeholder = ideco ? "例：273948" : isFund ? "例：10000" : "例：2500";
   $("#holding-symbol").placeholder = isFund ? "例：9I311181" : type === "日本株" ? "例：7203 / 563A" : "例：AAPL";
@@ -1581,6 +1593,7 @@ async function lookupHoldingName() {
     if (!res.ok) throw new Error(result.error || "銘柄情報を取得できませんでした");
     if (!result.name) throw new Error("銘柄名を取得できませんでした。銘柄名を手入力してください。");
     confirmHoldingSymbolChange({ type, symbol });
+    refreshHoldingClassificationIdentity({ type, symbol });
     $("#holding-name").value = result.name;
     delete $("#holding-name").dataset.cleared;
     status.textContent = "銘柄名を入力しました。必要に応じて修正できます。";
@@ -1872,8 +1885,9 @@ $("#holding-form").addEventListener("submit",async e=>{
   }
   $("#name-lookup-status").textContent = "";
   if (old >= 0) {
+    const identityChanged = !sameHoldingIdentity(previous, h);
     const sameQuote = normalizeStoredSymbol(previous.type, previous.symbol).toUpperCase() === h.symbol && previous.type === h.type && previous.currency === h.currency;
-    data.holdings[old] = { ...previous, ...h, ...(!sameQuote ? {
+    data.holdings[old] = { ...previous, ...(identityChanged ? emptyHoldingClassification() : {}), ...h, ...(!sameQuote ? {
       price: null, previousClose: null, priceTimestamp: null, priceDate: null, quoteStatus: "unknown", quoteAttemptedAt: null
     } : {}) };
   } else data.holdings.push(h);

@@ -154,6 +154,7 @@ test("holding form submit merges only editor user patch, keeps automatic codes, 
     function setHoldingFieldError() {} async function persistState() { saved = true; }`, context);
   for (const [selector, value] of [["id", "h"], ["account", "a"], ["account-category", "specified"], ["type", "米国株"], ["currency", "USD"], ["name", "NVDA"], ["symbol", "NVDA"]]) el(`#holding-${selector}`).value = value;
   el("#holding-dialog").open = true;
+  vm.runInContext(source.slice(source.indexOf("function sameHoldingIdentity("), source.indexOf("function confirmHoldingSymbolChange(")), context);
   const start = source.indexOf('$("#holding-form").addEventListener("submit",async e=>{');
   vm.runInContext(source.slice(start, source.indexOf('$("#account-form").addEventListener', start)), context);
   await el("#holding-form").handlers.submit({ preventDefault() {} });

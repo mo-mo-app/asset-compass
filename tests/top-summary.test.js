@@ -108,7 +108,7 @@ test("iDeCo acquisition amount calculates the displayed 10,000-unit acquisition 
   element("#holding-cost").value = "273,948";
   context.updateHoldingFormLabels();
 
-  assert.equal(element("#cost-label").textContent, "取得金額（円）");
+  assert.equal(element("#cost-label").textContent, "取得金額（円） *");
   assert.equal(element("#holding-cost").placeholder, "例：273948");
   assert.equal(context.calculateIdecoAcquisitionUnitCost(163067, 273948), 273948 / 163067 * 10000);
   assert.equal(element("#holding-cost-calculated").textContent, "取得単価（自動計算）：16,799.72円");

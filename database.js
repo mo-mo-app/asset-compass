@@ -227,6 +227,11 @@ function runMigrations() {
 
 runMigrations();
 
+function holdingIdentityChanged(holding, previous) {
+  return Boolean(previous && (holding.type !== previous.type ||
+    normalizeStoredSymbol(holding.type, holding.symbol).toUpperCase() !== normalizeStoredSymbol(previous.type, previous.symbol).toUpperCase()));
+}
+
 function classificationCodes(holding, previous, fieldName) {
   return Object.fromEntries(classificationFields.map(field => {
     const value = Object.hasOwn(holding, field) ? holding[field] : previous?.[field] ?? null;
@@ -322,7 +327,8 @@ function normalizeState(input, existingCategories = new Map(), existingHoldings 
       quantity: holding.quantity, cost: holding.cost, price, previousClose, quoteStatus, quoteAttemptedAt,
       priceTimestamp: optionalTimestamp(holding.priceTimestamp, `${field}.priceTimestamp`),
       priceDate,
-      ...classificationCodes(holding, existingHoldings?.get(id), field)
+      // Codes omitted by the editor belong to the previous company only while identity is unchanged.
+      ...classificationCodes(holding, holdingIdentityChanged(holding, existingHoldings?.get(id)) ? null : existingHoldings?.get(id), field)
     };
   });
   if (new Set(holdings.map(holding => holding.id)).size !== holdings.length) throw new Error("Holding IDs must be unique.");
@@ -560,7 +566,11 @@ function saveState(expectedRevision, input, snapshotMetadata = null) {
     const existingCategories = new Map(existingHoldings.map(row => [row.id, row.accountCategoryCode]));
     const existingById = new Map(existingHoldings.map(holding => [holding.id, { ...holding, symbol: normalizeStoredSymbol(holding.type, holding.symbol).toUpperCase() }]));
     const data = normalizeState(input, existingCategories, existingById);
-    for (const holding of data.holdings) assertEditableClassification(holding, existingById.get(holding.id));
+    for (const holding of data.holdings) {
+      const previous = existingById.get(holding.id);
+      // A new identity starts without automatic values; clients still cannot inject auto codes.
+      assertEditableClassification(holding, holdingIdentityChanged(holding, previous) ? {} : previous);
+    }
     const submittedIds = new Set(data.holdings.map(holding => holding.id));
     const effectiveHoldings = data.holdings.concat(existingHoldings.filter(holding => !submittedIds.has(holding.id)));
     for (const holding of data.holdings) {

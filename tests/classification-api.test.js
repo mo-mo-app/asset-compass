@@ -1,6 +1,6 @@
 const assert = require('node:assert/strict');
 const { test } = require('node:test');
-const { toSaveData } = require('../classification-editor');
+const { toSaveData, fields } = require('../classification-editor');
 const { startClassificationServer } = require('./helpers/classification-server');
 
 const holding = (id, fields = {}) => ({ id, accountId: 'a', type: '米国株', currency: 'USD', symbol: 'NVDA', name: '保存する銘柄', quantity: 2, cost: 100, ...fields });
@@ -91,4 +91,69 @@ test('SOXL holding save remains successful when the existing service skips a pro
   assert.equal(result.status, 200);
   assert.equal(result.body.classification.reason, 'unsupported_asset');
   assert.deepEqual(await api.read(), saved);
+});
+
+const oldCodes = {
+  auto_sector_code: 'FINANCIALS', auto_industry_code: 'INSURANCE', auto_sensitivity_code: 'NEUTRAL', auto_fund_category_code: 'BROAD_INDEX',
+  user_sector_code: 'ENERGY', user_industry_code: 'OLD_INDUSTRY', user_sensitivity_code: 'DEFENSIVE', user_fund_category_code: 'OTHER'
+};
+const codeNames = fields.flatMap(field => [field.auto, field.user]);
+for (const [type, currency, originalSymbol, symbol, industry] of [
+  ['米国株', 'USD', 'NVDA', 'MU', 'SEMICONDUCTORS'], ['日本株', 'JPY', '8766', '9432', 'INFORMATION_COMMUNICATIONS']
+]) test(`${type} identity replacement clears all previous codes before classifying the new symbol`, async t => {
+  const api = await setup(t, [holding('h', { type, currency, symbol: originalSymbol, ...oldCodes })]);
+  const original = await api.read();
+  const data = structuredClone(original.data);
+  Object.assign(data.holdings[0], { symbol, name: '新しい銘柄' });
+  for (const code of codeNames) data.holdings[0][code] = null;
+  const saved = await api.save(data);
+  assert.equal(saved.revision, original.revision + 1);
+  for (const code of codeNames) assert.equal(saved.data.holdings[0][code], null, code);
+  const result = await api.classify('h');
+  assert.equal(result.status, 200);
+  assert.equal(result.body.classification.status, 'updated');
+  const updated = result.body.state.data.holdings[0];
+  assert.equal(updated.symbol, symbol);
+  assert.equal(updated.auto_industry_code, industry);
+  assert.equal(updated.auto_fund_category_code, null);
+  for (const field of fields) assert.equal(updated[field.user], null, field.user);
+  assert.deepEqual(await api.read(), result.body.state);
+});
+
+for (const mode of ['error', 'timeout']) test(`replacement classification ${mode} never restores the old identity or codes`, async t => {
+  const api = await setup(t, [holding('h', oldCodes)]);
+  const state = await api.read();
+  const data = structuredClone(state.data);
+  Object.assign(data.holdings[0], { symbol: 'MU', user_sector_code: 'MATERIALS' });
+  for (const code of codeNames) if (code !== 'user_sector_code') delete data.holdings[0][code];
+  const saved = await api.save(data);
+  assert.equal(saved.data.holdings[0].user_sector_code, 'MATERIALS');
+  for (const code of codeNames) if (code !== 'user_sector_code') assert.equal(saved.data.holdings[0][code], null, code);
+  api.setMode(mode);
+  const result = await api.classify('h');
+  assert.equal(result.body.classification.status, 'failed');
+  assert.deepEqual(await api.read(), saved);
+});
+
+test('a stale identity replacement is rejected atomically, keeping the latest identity and manual classification', async t => {
+  const api = await setup(t, [holding('h', oldCodes)]);
+  const original = await api.read();
+  const current = structuredClone(original.data);
+  current.holdings[0].user_sensitivity_code = 'CYCLICAL';
+  const saved = await api.save(current);
+  const stale = toSaveData(structuredClone(original.data));
+  stale.holdings[0].symbol = 'MU';
+  for (const field of fields) stale.holdings[0][field.user] = null;
+  const result = await api.request('/api/v1/state', 'PUT', { expectedRevision: original.revision, data: stale });
+  assert.equal(result.status, 409);
+  assert.deepEqual(await api.read(), saved);
+});
+
+test('an equivalent Japanese quote suffix preserves all saved classifications', async t => {
+  const api = await setup(t, [holding('h', { type: '日本株', currency: 'JPY', symbol: '8766', ...oldCodes })]);
+  const state = await api.read();
+  const data = structuredClone(state.data);
+  data.holdings[0].symbol = '8766.t';
+  const saved = await api.save(data);
+  assert.deepEqual(saved.data.holdings, state.data.holdings);
 });

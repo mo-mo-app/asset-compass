@@ -30,9 +30,9 @@ async function startClassificationServer() {
       if (mode === 'error') return new Response('error', { status: 500 });
       if (url.includes('gateway.drillr.ai')) {
         if (mode === 'etf') return Response.json({ data: [{ ticker: new URL(url).searchParams.get('ticker'), market: 'US', isEtf: true }] });
-        return new Response(fs.readFileSync(root + '/tests/fixtures/classification/drillr-NVDA.json', 'utf8'));
+        return new Response(fs.readFileSync(root + '/tests/fixtures/classification/drillr-' + new URL(url).searchParams.get('ticker') + '.json', 'utf8'));
       }
-      return new Response(fs.readFileSync(root + '/tests/fixtures/classification/yahoo-8766.html', 'utf8'));
+      return new Response(fs.readFileSync(root + '/tests/fixtures/classification/yahoo-' + (url.includes('/9432.T/') ? '9432' : '8766') + '.html', 'utf8'));
     };
     const service = require(root + '/classification-service');
     const refresh = service.refreshClassification;

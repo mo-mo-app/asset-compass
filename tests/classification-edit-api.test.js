@@ -147,3 +147,22 @@ test("new holdings accept valid user codes, and browser modules are served witho
   for (const file of ["classification-masters.js", "classification-editor.js"]) assert.equal((await fetch(app.base + "/" + file)).status, 200);
   for (const file of ["classification-service.js", "classification-rules.js", "database.js"]) assert.equal((await fetch(app.base + "/" + file)).status, 404);
 });
+
+test("identity changes cannot inject automatic codes, while equivalent symbols preserve protected codes", async t => {
+  const { app, state } = await fixture(t);
+  for (const field of editor.fields) {
+    const injected = editor.toSaveData(structuredClone(state.data));
+    Object.assign(injected.holdings[0], { symbol: "MU", [field.auto]: field.kind === "fundCategory" ? "BROAD_INDEX" : field.kind === "sector" ? "ENERGY" : field.kind === "industry" ? "SEMICONDUCTORS" : "NEUTRAL" });
+    await put(app, state, injected, 400);
+    assert.deepEqual(await read(app), state);
+  }
+  const equivalent = editor.toSaveData(structuredClone(state.data));
+  equivalent.holdings[0].symbol = "nvda";
+  equivalent.holdings[0].currency = "JPY";
+  const saved = await put(app, state, equivalent);
+  for (const field of editor.fields) assert.equal(saved.data.holdings[0][field.auto], state.data.holdings[0][field.auto]);
+  const clear = editor.toSaveData(structuredClone(saved.data));
+  clear.holdings[0].auto_sector_code = null;
+  await put(app, saved, clear, 400);
+  assert.deepEqual(await read(app), saved);
+});

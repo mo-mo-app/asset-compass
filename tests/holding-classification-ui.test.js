@@ -1,6 +1,8 @@
 const assert = require('node:assert/strict');
 const { test } = require('node:test');
 const vm = require('node:vm');
+const { normalizeStoredSymbol } = require('../symbols');
+const classificationFields = require('../classification-editor').fields.flatMap(field => [field.auto, field.user]);
 const { prepare } = require('./helpers/holding-ui');
 
 const saveButtonSelector = "#holding-form button[value='default']";
@@ -23,7 +25,11 @@ function setup(options = {}) {
     if (options.method === 'PUT') {
       const body = JSON.parse(options.body);
       assert.equal(body.expectedRevision, current.revision);
-      current = { initialized: true, revision: current.revision + 1, data: { ...body.data, holdings: body.data.holdings.map(h => ({ ...current.data.holdings.find(previous => previous.id === h.id), ...h })) } };
+      current = { initialized: true, revision: current.revision + 1, data: { ...body.data, holdings: body.data.holdings.map(h => {
+        const previous = current.data.holdings.find(previous => previous.id === h.id);
+        const changed = previous && (previous.type !== h.type || normalizeStoredSymbol(previous.type, previous.symbol).toUpperCase() !== normalizeStoredSymbol(h.type, h.symbol).toUpperCase());
+        return { ...previous, ...(changed ? Object.fromEntries(classificationFields.map(field => [field, null])) : {}), ...h };
+      }) } };
       return response(current);
     }
     if (options.method === 'POST') return api.classify();
@@ -180,4 +186,120 @@ test('advanced classification settings begin closed and close again when another
   ui.element('#holding-dialog').close();
   ui.context.openHolding('');
   assert.equal(advanced.open, false);
+});
+
+const oldClassification = {
+  auto_sector_code: 'FINANCIALS', auto_industry_code: 'INSURANCE', auto_sensitivity_code: 'NEUTRAL', auto_fund_category_code: 'BROAD_INDEX',
+  user_sector_code: 'ENERGY', user_industry_code: 'USER_INDUSTRY', user_sensitivity_code: 'DEFENSIVE', user_fund_category_code: 'OTHER'
+};
+function classifiedEdit(options = {}) {
+  const ui = setup(options);
+  ui.context.fields = oldClassification;
+  vm.runInContext('Object.assign(data.holdings[0], fields)', ui.context);
+  Object.assign(ui.api.current.data.holdings[0], oldClassification);
+  ui.context.openHolding('holding-1');
+  const fetch = ui.context.fetch;
+  ui.lookupResult = () => ui.api.response({ name: '新しい銘柄名' });
+  ui.context.fetch = (url, options) => url.startsWith('/api/name?') || url.startsWith('/api/quote?') ? ui.lookupResult() : fetch(url, options);
+  return ui;
+}
+function assertInitialClassification(ui) {
+  for (const row of ui.rows.values()) assert.equal(row.input.value, '');
+  assert.equal(ui.rows.get('sector').row.hidden, false, 'old ETF/fund flags no longer hide stock classification');
+}
+for (const [type, symbol, sameSymbol] of [['米国株', 'NVDA', 'nvda'], ['日本株', '8766', '8766.t']]) test(`${type} normalized-equivalent lookup keeps all classification and persisted data`, async () => {
+  const ui = classifiedEdit({ type, symbol, currency: type === '日本株' ? 'JPY' : 'USD' });
+  const before = ui.state();
+  ui.element('#holding-symbol').value = sameSymbol;
+  await ui.context.lookupHoldingName();
+  for (const field of require('../classification-editor').fields) assert.equal(ui.rows.get(field.kind).input.value, oldClassification[field.user]);
+  assert.deepEqual(ui.state(), before);
+});
+test('typing a different symbol does not clear classification; successful lookup clears all eight fields only in the editor', async () => {
+  const ui = classifiedEdit(); const before = ui.state();
+  ui.element('#holding-symbol').value = 'MU';
+  for (const field of require('../classification-editor').fields) assert.equal(ui.rows.get(field.kind).input.value, oldClassification[field.user]);
+  assert.deepEqual(ui.state(), before);
+  await ui.context.lookupHoldingName();
+  assertInitialClassification(ui);
+  assert.deepEqual(ui.state(), before);
+  assert.deepEqual(ui.api.current.data.holdings, before);
+  assert.equal(ui.element('#holding-name').value, '新しい銘柄名');
+});
+for (const outcome of ['http', 'missing-name', 'exception']) test(`${outcome} lookup failure retains old classification for a different symbol`, async () => {
+  const ui = classifiedEdit(); const before = ui.state();
+  ui.element('#holding-symbol').value = 'MU';
+  ui.lookupResult = () => outcome === 'http' ? ui.api.response({ error: 'not found' }, 404)
+    : outcome === 'missing-name' ? ui.api.response({}) : Promise.reject(new Error('offline'));
+  await ui.context.lookupHoldingName();
+  for (const field of require('../classification-editor').fields) assert.equal(ui.rows.get(field.kind).input.value, oldClassification[field.user]);
+  assert.deepEqual(ui.state(), before);
+});
+test('saving a cleared replacement discards every old user/auto code, then classifies the new symbol', async () => {
+  const ui = classifiedEdit();
+  ui.element('#holding-symbol').value = 'MU';
+  await ui.context.lookupHoldingName();
+  ui.element('#holding-quantity').value = '3'; ui.element('#holding-cost').value = '120';
+  await ui.save();
+  const holding = ui.state()[0];
+  assert.equal(holding.symbol, 'MU');
+  assert.equal(holding.name, '新しい銘柄名');
+  for (const field of classificationFields) assert.equal(holding[field], auto[field] ?? null);
+  assert.deepEqual(ui.requests.map(([method]) => method), ['PUT', 'POST']);
+  ui.context.openHolding('holding-1');
+  assert.equal(ui.rows.get('sector').input.value, auto.auto_sector_code);
+  assert.equal(ui.rows.get('industry').input.value, auto.auto_industry_code);
+});
+test('new manual edits after classification clearing survive automatic classification, including repeated same-symbol lookups', async () => {
+  const ui = classifiedEdit();
+  ui.element('#holding-symbol').value = 'MU'; await ui.context.lookupHoldingName();
+  ui.rows.get('sector').input.value = 'MATERIALS'; ui.rows.get('sector').input.fire('change');
+  await ui.context.lookupHoldingName();
+  assert.equal(ui.rows.get('sector').input.value, 'MATERIALS');
+  ui.element('#holding-quantity').value = '3'; ui.element('#holding-cost').value = '120';
+  await ui.save();
+  assert.equal(ui.state()[0].user_sector_code, 'MATERIALS');
+  assert.equal(ui.state()[0].auto_sector_code, auto.auto_sector_code);
+});
+test('cancelling a cleared replacement preserves original symbol and all original classifications', async () => {
+  const ui = classifiedEdit(); const before = ui.state();
+  ui.element('#holding-symbol').value = 'MU'; await ui.context.lookupHoldingName();
+  assertInitialClassification(ui);
+  ui.element('#holding-dialog').close();
+  assert.deepEqual(ui.state(), before); assert.deepEqual(ui.api.current.data.holdings, before);
+  assert.equal(ui.requests.length, 0);
+  ui.context.openHolding('holding-1');
+  assert.equal(ui.element('#holding-symbol').value, 'NVDA');
+  for (const field of require('../classification-editor').fields) assert.equal(ui.rows.get(field.kind).input.value, oldClassification[field.user]);
+});
+test('returning to the original symbol after a cleared preview restores the original classification', async () => {
+  const ui = classifiedEdit(); const before = ui.state();
+  ui.element('#holding-symbol').value = 'MU'; await ui.context.lookupHoldingName();
+  assertInitialClassification(ui);
+  ui.element('#holding-symbol').value = 'NVDA'; await ui.context.lookupHoldingName();
+  for (const field of require('../classification-editor').fields) assert.equal(ui.rows.get(field.kind).input.value, oldClassification[field.user]);
+  assert.deepEqual(ui.state(), before);
+});
+test('stale lookup success cannot clear a reopened editor or a changed draft symbol', async () => {
+  for (const reopen of [false, true]) {
+    const ui = classifiedEdit(); const before = ui.state(); let release;
+    ui.element('#holding-symbol').value = 'MU'; ui.lookupResult = () => new Promise(resolve => { release = resolve; });
+    const pending = ui.context.lookupHoldingName();
+    if (reopen) { ui.element('#holding-dialog').close(); ui.context.openHolding('holding-1'); }
+    else ui.element('#holding-symbol').value = 'AAPL';
+    release(ui.api.response({ name: 'stale name' })); await pending;
+    for (const field of require('../classification-editor').fields) assert.equal(ui.rows.get(field.kind).input.value, oldClassification[field.user]);
+    assert.deepEqual(ui.state(), before);
+  }
+});
+test('required stars appear on stock, fund and iDeCo quantity/cost labels without changing input rules', () => {
+  for (const [type, category, quantityLabel, costLabel] of [
+    ['米国株', 'specified', '保有数量 *', '取得単価 *'], ['日本株', 'specified', '保有数量 *', '取得単価 *'],
+    ['投資信託', 'specified', '保有口数 *', '取得基準価額（1万口あたり） *'],
+    ['投資信託', 'ideco', '保有口数 *', '取得金額（円） *']
+  ]) {
+    const ui = setup({ type, category, currency: type === '米国株' ? 'USD' : 'JPY', symbol: type === '投資信託' ? '03311187' : 'NVDA' });
+    assert.equal(ui.element('#quantity-label').textContent, quantityLabel);
+    assert.equal(ui.element('#cost-label').textContent, costLabel);
+  }
 });
