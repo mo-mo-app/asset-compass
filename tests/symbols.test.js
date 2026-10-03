@@ -61,6 +61,8 @@ function appContext(holdings) {
   });
   vm.runInContext(fs.readFileSync(path.join(root, "symbols.js"), "utf8"), context);
   vm.runInContext(fs.readFileSync(path.join(root, "holding-number-rules.js"), "utf8"), context);
+  vm.runInContext(fs.readFileSync(path.join(root, "classification-masters.js"), "utf8"), context);
+  vm.runInContext(fs.readFileSync(path.join(root, "classification-display.js"), "utf8"), context);
   const source = fs.readFileSync(path.join(root, "app.js"), "utf8");
   vm.runInContext(source.slice(0, source.indexOf('document.addEventListener("click"')), context);
   return { context, element, requested };

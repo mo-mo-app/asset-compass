@@ -144,7 +144,7 @@ test("new holdings accept valid user codes, and browser modules are served witho
   const saved = await put(app, state, data);
   assert.equal(saved.data.holdings.at(-1).user_sector_code, "FINANCIALS");
   assert.equal(saved.data.holdings.at(-1).auto_sector_code, null);
-  for (const file of ["classification-masters.js", "classification-editor.js"]) assert.equal((await fetch(app.base + "/" + file)).status, 200);
+  for (const file of ["classification-masters.js", "classification-display.js", "classification-editor.js"]) assert.equal((await fetch(app.base + "/" + file)).status, 200);
   for (const file of ["classification-service.js", "classification-rules.js", "database.js"]) assert.equal((await fetch(app.base + "/" + file)).status, 404);
 });
 

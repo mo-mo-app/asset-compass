@@ -690,7 +690,15 @@ html[data-environment="preview"] .sidebar .sidebar-foot{border-color:#514164}
 html[data-environment="preview"] .sidebar .brand-mark{--brand-ring:#c2a0f4;--brand-mint:#c2a0f4;--brand-center:#2b203d}
 .preview-badge{display:none;align-items:center;justify-content:center;border:1px solid #8f70ba;border-radius:999px;background:#49365f;color:#f2eafa;font:600 9px/1 "DM Mono",monospace;letter-spacing:1.1px;white-space:nowrap}
 html[data-environment="preview"] .sidebar-preview-badge{display:inline-flex;width:max-content;margin:0 10px 15px;padding:6px 9px}
+
+.holding-classification-pills{display:flex;flex-wrap:wrap;align-items:center;gap:4px;min-width:0;margin-top:6px}
+.classification-pill{display:inline-flex;align-items:center;max-width:100%;border:1px solid;border-radius:999px;padding:2px 7px;font-size:10px;font-weight:600;line-height:1.4;white-space:nowrap}
+.classification-pill--sector{color:#765400;background:#fff7d6;border-color:#e8ca67}
+.classification-pill--sensitivity{color:#075c75;background:#e4f7fc;border-color:#82d3e8}
+.classification-pill--fund-category{color:#8a3d08;background:#fff0df;border-color:#efb36e}
 @media(max-width:600px){
+  #holdings-view .holding-classification-pills{grid-column:1 / -1}
+  #holdings-view .classification-pill{font-size:10px}
   html[data-environment="preview"] .mobile-brand{background:#2b203d}
   html[data-environment="preview"] .mobile-brand .brand-mark{--brand-ring:#c2a0f4;--brand-mint:#c2a0f4;--brand-center:#2b203d}
   html[data-environment="preview"] .mobile-bottom-nav{background:#2b203d;border-color:#514164}
