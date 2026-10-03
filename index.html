@@ -149,14 +149,17 @@
           <form id="asset-goal-form" class="panel goal-input-panel" novalidate>
             <h3>シミュレーション条件</h3>
             <div class="goal-input-grid">
+              <label class="goal-field"><span>シミュレーション開始月</span><span class="goal-input-wrap"><input id="goal-start-month" type="month" autocomplete="off" /></span></label>
               <label class="goal-field"><span>現在資産</span><span class="goal-input-wrap"><input id="goal-current-assets" type="text" inputmode="decimal" autocomplete="off" aria-describedby="goal-current-help" /><span>円</span></span><small id="goal-current-help">現在の総資産を使用</small></label>
               <label class="goal-field"><span>目標資産</span><span class="goal-input-wrap"><input id="goal-target-assets" type="text" inputmode="decimal" autocomplete="off" value="100,000,000" /><span>円</span></span></label>
               <label class="goal-field"><span>毎月の積立額</span><span class="goal-input-wrap"><input id="goal-monthly-contribution" type="text" inputmode="decimal" autocomplete="off" value="0" /><span>円 / 月</span></span></label>
               <div class="goal-field"><label for="goal-annual-return">想定年利</label><span class="goal-input-wrap"><input id="goal-annual-return" type="number" inputmode="decimal" step="any" value="7" /><span>%</span></span><div class="goal-presets" aria-label="想定年利プリセット"><button type="button" data-goal-rate="3">3%</button><button type="button" data-goal-rate="5">5%</button><button type="button" data-goal-rate="7">7%</button><button type="button" data-goal-rate="10">10%</button></div></div>
-              <label class="goal-field"><span>シミュレーション開始月</span><span class="goal-input-wrap"><input id="goal-start-month" type="month" autocomplete="off" /></span></label>
             </div>
-            <div class="goal-form-actions"><p id="goal-error" class="goal-error" role="alert" hidden></p><button class="button primary" type="submit">シミュレーション</button></div>
-            <div class="goal-save-actions"><p id="goal-settings-status" role="status" aria-live="polite"></p><button class="button ghost" id="goal-save-settings" type="button">保存</button><button class="button primary" id="goal-save-settings-dashboard" type="button">保存してTOP表示</button></div>
+            <div class="goal-form-actions">
+              <p id="goal-error" class="goal-error" role="alert" hidden></p>
+              <div class="goal-button-row"><button class="button primary" type="submit">シミュレーションする</button><button class="button ghost" id="goal-save-settings" type="button">結果を目標として保存する</button></div>
+              <p id="goal-settings-status" role="status" aria-live="polite"></p>
+            </div>
           </form>
           <section id="goal-result-panel" class="panel goal-result-panel" aria-labelledby="goal-results-heading" data-has-result="false">
             <div class="goal-result-layout">
@@ -168,18 +171,18 @@
                     <svg data-goal-state-icon="projected" viewBox="0 0 24 24"><path d="M4 17 9 12l3.5 3.5L20 8"/><path d="M14 8h6v6"/></svg>
                     <svg data-goal-state-icon="unmet" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>
                   </span>
-                  <strong id="goal-result-state-label">—</strong>
+                  <strong id="goal-result-state-label"></strong>
                 </div>
                 <p id="goal-summary" class="goal-summary" aria-live="polite"><span id="goal-summary-detail"></span></p>
                 <div class="goal-result-lower">
                   <div class="goal-achievement-wrap">
                     <div id="goal-achievement-donut" class="goal-achievement-donut" role="img" aria-label="目標達成率 0%">
-                      <div class="goal-achievement-center"><span>達成率</span><strong id="goal-result-achievement">—</strong></div>
+                      <div class="goal-achievement-center"><span>達成率</span><strong id="goal-result-achievement"></strong></div>
                     </div>
                   </div>
                   <div class="goal-result-highlights">
-                    <div class="goal-result-highlight"><span id="goal-result-primary-label">—</span><strong id="goal-result-primary-value">—</strong></div>
-                    <div id="goal-result-secondary-highlight" class="goal-result-highlight"><span id="goal-result-secondary-label">—</span><strong id="goal-result-secondary-value">—</strong></div>
+                    <div class="goal-result-highlight"><span id="goal-result-primary-label"></span><strong id="goal-result-primary-value"></strong></div>
+                    <div id="goal-result-secondary-highlight" class="goal-result-highlight"><span id="goal-result-secondary-label"></span><strong id="goal-result-secondary-value"></strong></div>
                   </div>
                 </div>
               </div>

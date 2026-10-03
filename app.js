@@ -349,16 +349,16 @@ function formatGoalDuration(months) {
 }
 function clearGoalSimulationResults(message = "条件を入力して「シミュレーション」を実行してください。") {
   const donut = $("#goal-achievement-donut");
-  $("#goal-result-state-label").textContent = "—";
-  $("#goal-result-primary-label").textContent = "—";
-  $("#goal-result-primary-value").textContent = "—";
-  $("#goal-result-secondary-label").textContent = "—";
-  $("#goal-result-secondary-value").textContent = "—";
-  $("#goal-result-achievement").textContent = "—";
+  $("#goal-result-state-label").textContent = "";
+  $("#goal-result-primary-label").textContent = "";
+  $("#goal-result-primary-value").textContent = "";
+  $("#goal-result-secondary-label").textContent = "";
+  $("#goal-result-secondary-value").textContent = "";
+  $("#goal-result-achievement").textContent = "";
   $("#goal-result-secondary-highlight").hidden = false;
   donut.style.setProperty("--goal-achievement-progress", "0%");
   donut.dataset.achievementRate = "";
-  donut.setAttribute("aria-label", "目標達成率 —");
+  donut.setAttribute("aria-label", "目標達成率");
   $("#goal-summary-detail").textContent = message;
   $("#goal-summary").dataset.state = "empty";
   $("#goal-result-panel").dataset.hasResult = "false";
@@ -697,16 +697,16 @@ async function loadAssetGoalSettings() {
     return null;
   }
 }
-async function saveAssetGoalSettings(showOnDashboard = false) {
+async function saveAssetGoalSettings() {
   const settingsStatus = $("#goal-settings-status");
-  const saveButtons = [$("#goal-save-settings"), $("#goal-save-settings-dashboard")];
+  const saveButtons = [$("#goal-save-settings")];
   const annualReturnRaw = $("#goal-annual-return").value.trim();
   const settings = {
     target_amount: parseGoalSettingNumber("#goal-target-assets"),
     annual_return_rate: annualReturnRaw === "" ? NaN : Number(annualReturnRaw),
     monthly_contribution: parseGoalSettingNumber("#goal-monthly-contribution"),
     start_month: $("#goal-start-month").value,
-    ...(showOnDashboard ? { show_on_dashboard: true } : {})
+    show_on_dashboard: true
   };
   settingsStatus.textContent = "";
   saveButtons.forEach(button => { button.disabled = true; });
@@ -1917,8 +1917,7 @@ $("#asset-goal-form").addEventListener("input", event => {
   if (event.target.id === "goal-current-assets") event.target.dataset.userEdited = "true";
   $("#goal-error").hidden = true;
 });
-$("#goal-save-settings").addEventListener("click", () => { void saveAssetGoalSettings(false); });
-$("#goal-save-settings-dashboard").addEventListener("click", () => { void saveAssetGoalSettings(true); });
+$("#goal-save-settings").addEventListener("click", () => { void saveAssetGoalSettings(); });
 ["#goal-current-assets", "#goal-target-assets", "#goal-monthly-contribution"].forEach(selector => {
   $(selector).addEventListener("blur", event => {
     const raw = event.target.value.trim().replaceAll(",", "");

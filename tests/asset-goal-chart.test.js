@@ -82,17 +82,63 @@ test("saved goal settings restore and save inputs separately from current assets
   assert.equal(element("#goal-start-month").value, "2026-10");
   assert.equal(element("#goal-current-assets").value, "4,500,000", "current assets are not part of the saved settings");
 
-  await context.saveAssetGoalSettings(false);
-  assert.equal(savedBody.show_on_dashboard, undefined, "ordinary save leaves the dashboard preference untouched");
-  assert.equal(persisted.show_on_dashboard, false);
+  await context.saveAssetGoalSettings();
+  assert.equal(savedBody.show_on_dashboard, true, "saving the result enables the TOP goal setting");
+  assert.equal(persisted.show_on_dashboard, true);
   assert.equal(topView, null);
-  await context.saveAssetGoalSettings(true);
-  assert.equal(savedBody.show_on_dashboard, true);
-  assert.equal(topView, null, "saving for TOP keeps the goal details open");
-  await context.saveAssetGoalSettings(false);
-  assert.equal(savedBody.show_on_dashboard, undefined, "later ordinary save still omits the dashboard preference");
-  assert.equal(persisted.show_on_dashboard, true, "ordinary save preserves the enabled dashboard preference");
   assert.equal(element("#goal-settings-status").textContent, "目標設定を保存しました。");
+});
+
+test("goal form orders five conditions, keeps rate presets on one line, and has two centered actions", () => {
+  const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
+  const css = fs.readFileSync(path.join(root, "styles.css"), "utf8");
+  const form = html.slice(html.indexOf('<form id="asset-goal-form"'), html.indexOf("</form>", html.indexOf('<form id="asset-goal-form"')));
+  const conditionIds = ["goal-start-month", "goal-current-assets", "goal-target-assets", "goal-monthly-contribution", "goal-annual-return"];
+  const conditionPositions = conditionIds.map(id => form.indexOf(`id="${id}"`));
+  assert.ok(conditionPositions.every(position => position >= 0));
+  assert.deepEqual(conditionPositions, [...conditionPositions].sort((a, b) => a - b), "conditions follow the requested order");
+  const actionRow = form.slice(form.indexOf('<div class="goal-button-row">'), form.indexOf("</div>", form.indexOf('<div class="goal-button-row">')));
+  assert.equal((actionRow.match(/<button\b/g) || []).length, 2);
+  assert.match(actionRow, /シミュレーションする[\s\S]*結果を目標として保存する/);
+  assert.doesNotMatch(form, /保存してTOP表示|>保存</);
+  assert.match(css, /\.goal-input-grid\{display:grid;grid-template-columns:minmax\(0,\.78fr\)[^}]+minmax\(0,1\.45fr\)/);
+  assert.match(css, /\.goal-presets\{display:flex;flex-wrap:nowrap/);
+  assert.match(css, /\.goal-button-row\{display:flex;align-items:center;justify-content:center/);
+  assert.match(css, /#goal-settings-status\{[^}]*text-align:center/);
+  assert.match(css, /@media\(max-width:600px\)[\s\S]*?\.goal-button-row\{width:100%;align-items:center;flex-direction:column/);
+  assert.match(css, /\.goal-button-row \.button\{flex:none;width:min\(100%,280px\)/);
+});
+
+test("simulation run does not persist goal settings", () => {
+  const { context, element } = goalChartContext();
+  let saves = 0;
+  context.fetch = async () => { saves += 1; throw new Error("unexpected settings save"); };
+  element("#goal-current-assets").value = "1000000";
+  element("#goal-target-assets").value = "2000000";
+  element("#goal-monthly-contribution").value = "10000";
+  element("#goal-annual-return").value = "5";
+  element("#goal-start-month").value = "2026-10";
+
+  context.runGoalSimulation({ preventDefault() {} });
+  assert.equal(saves, 0);
+  assert.equal(element("#goal-result-panel").dataset.hasResult, "true");
+  clearTimeout(context.goalChartResizeTimer);
+});
+
+test("unrun simulation result values and labels are blank instead of hyphens", () => {
+  const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
+  const { context, element } = goalChartContext();
+  context.clearGoalSimulationResults();
+  for (const id of [
+    "goal-result-state-label", "goal-result-primary-label", "goal-result-primary-value",
+    "goal-result-secondary-label", "goal-result-secondary-value", "goal-result-achievement"
+  ]) {
+    const markup = html.match(new RegExp(`<[^>]+id="${id}"[^>]*>([^<]*)</`));
+    assert.ok(markup, `${id} exists`);
+    assert.equal(markup[1], "", `${id} starts blank`);
+    assert.equal(element(`#${id}`).textContent, "", `${id} clears to blank`);
+  }
+  assert.equal(element("#goal-achievement-donut").attributes.get("aria-label"), "目標達成率");
 });
 
 test("standard goal simulation draws asset and target lines with the exact goal month", () => {
