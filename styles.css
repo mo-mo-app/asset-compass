@@ -682,3 +682,18 @@
 @media(max-width:600px){
   .classification-reset{min-height:44px}
 }
+
+html[data-environment="preview"] .sidebar{background:#2b203d}
+html[data-environment="preview"] .sidebar nav .nav-item.active,
+html[data-environment="preview"] .sidebar nav .nav-item:hover{background:#49365f}
+html[data-environment="preview"] .sidebar .sidebar-foot{border-color:#514164}
+html[data-environment="preview"] .sidebar .brand-mark{--brand-ring:#c2a0f4;--brand-mint:#c2a0f4;--brand-center:#2b203d}
+.preview-badge{display:none;align-items:center;justify-content:center;border:1px solid #8f70ba;border-radius:999px;background:#49365f;color:#f2eafa;font:600 9px/1 "DM Mono",monospace;letter-spacing:1.1px;white-space:nowrap}
+html[data-environment="preview"] .sidebar-preview-badge{display:inline-flex;width:max-content;margin:0 10px 15px;padding:6px 9px}
+@media(max-width:600px){
+  html[data-environment="preview"] .mobile-brand{background:#2b203d}
+  html[data-environment="preview"] .mobile-brand .brand-mark{--brand-ring:#c2a0f4;--brand-mint:#c2a0f4;--brand-center:#2b203d}
+  html[data-environment="preview"] .mobile-bottom-nav{background:#2b203d;border-color:#514164}
+  html[data-environment="preview"] .mobile-bottom-nav .nav-item.active{background:#49365f}
+  html[data-environment="preview"] .mobile-preview-badge{display:inline-flex;margin-left:2px;padding:6px 8px;font-size:8px}
+}

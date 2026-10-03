@@ -6,13 +6,14 @@ const { stockQuoteFromChart, fundPreviousClose } = require("./quote-data");
 const { toQuoteSymbol } = require("./symbols");
 const { getState, getSnapshots, migrateLocalState, saveState } = require("./database");
 const { refreshClassification } = require("./classification-service");
+const { renderIndexHtml } = require("./environment-view");
 const root = __dirname;
 let migration = null;
 const port = Number(process.env.ASSET_COMPASS_PORT) || 8766;
 const bindLan = process.env.ASSET_COMPASS_BIND_LAN !== "false";
 const host = process.env.ASSET_COMPASS_HOST;
 const trustProxy = process.env.ASSET_COMPASS_TRUST_PROXY === "true";
-const publicFiles = new Set(["index.html", "app.js", "symbols.js", "holding-number-rules.js", "classification-masters.js", "classification-editor.js", "asset-goal-simulation.js", "styles.css", "funds.css", "assets/version-history.json", "assets/asset-compass-logo.svg", "assets/asset-compass-icon.svg", "assets/asset-compass-mono.svg", "assets/favicon.svg", "assets/apple-touch-icon.png", "assets/icons/asset-weather-storm.svg", "assets/icons/asset-weather-rain.svg", "assets/icons/asset-weather-cloud.svg", "assets/icons/asset-weather-partly-cloudy.svg", "assets/icons/asset-weather-sunny.svg", "assets/icons/asset-weather-very-sunny.svg", "assets/icons/asset-weather-special.svg"]);
+const publicFiles = new Set(["index.html", "app.js", "symbols.js", "holding-number-rules.js", "classification-masters.js", "classification-editor.js", "asset-goal-simulation.js", "styles.css", "funds.css", "assets/version-history.json", "assets/asset-compass-logo.svg", "assets/asset-compass-icon.svg", "assets/asset-compass-mono.svg", "assets/favicon.svg", "assets/favicon-preview.svg", "assets/apple-touch-icon.png", "assets/icons/asset-weather-storm.svg", "assets/icons/asset-weather-rain.svg", "assets/icons/asset-weather-cloud.svg", "assets/icons/asset-weather-sunny.svg", "assets/icons/asset-weather-very-sunny.svg", "assets/icons/asset-weather-special.svg"]);
 
 const contentTypes = {".html":"text/html; charset=utf-8",".js":"text/javascript; charset=utf-8",".css":"text/css; charset=utf-8",".json":"application/json; charset=utf-8",".svg":"image/svg+xml",".png":"image/png"};
 const send = (res, status, body, type="application/json; charset=utf-8") => {
@@ -251,7 +252,10 @@ const handleRequest = async (req, res) => {
   const file = path.resolve(root, `.${safePath}`);
   const relativeFile = path.relative(root, file).split(path.sep).join("/");
   if (relativeFile.startsWith("..") || !publicFiles.has(relativeFile) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) return send(res, 404, "Not found", "text/plain");
-  send(res, 200, fs.readFileSync(file), contentTypes[path.extname(file)] || "application/octet-stream");
+  const body = relativeFile === "index.html"
+    ? renderIndexHtml(fs.readFileSync(file, "utf8"), process.env.ASSET_COMPASS_ENV)
+    : fs.readFileSync(file);
+  send(res, 200, body, contentTypes[path.extname(file)] || "application/octet-stream");
 };
 
 function isPrivateIPv4(address) {

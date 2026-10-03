@@ -1464,9 +1464,9 @@ function handleHoldingClassificationChange() {
   const current = holdingFormContext();
   if (previous && (previous.type !== current.type || isIdecoCategory(previous.accountCategoryCode) !== isIdecoCategory(current.accountCategoryCode))) {
     clearHoldingIdentityInputs();
-    clearHoldingNumbers("資産区分・口座区分が変更されたため、保有数量と取得値をクリアしました。\n新しい区分の値を入力してください。");
+    clearHoldingNumbers("資産区分・口座区分が変更されたため、銘柄情報と保有数量、取得値をクリアしました。");
   } else if (previous && previous.currency !== current.currency) {
-    clearHoldingNumbers("通貨が変更されたため、取得値をクリアしました。\n新しい通貨の値を入力してください。", true);
+    clearHoldingNumbers("通貨が変更されたため、取得値をクリアしました。", true);
   }
   rememberHoldingClassification();
 }
@@ -1495,7 +1495,7 @@ function confirmHoldingSymbolChange(confirmedIdentity = holdingFormContext()) {
   }
   if (sameHoldingIdentity(holdingEditState.confirmedIdentity, identity)) return false;
   clearHoldingInput("#holding-name");
-  clearHoldingNumbers("銘柄が変更されたため、銘柄名・保有数量・取得値をクリアしました。\n新しい銘柄の値を入力してください。");
+  clearHoldingNumbers("銘柄が変更されたため、銘柄名・保有数量・取得値をクリアしました。");
   holdingEditState.confirmedIdentity = identity;
   return true;
 }
