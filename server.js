@@ -5,6 +5,7 @@ const os = require("os");
 const { stockQuoteFromChart, fundPreviousClose } = require("./quote-data");
 const { toQuoteSymbol } = require("./symbols");
 const { getState, getSnapshots, migrateLocalState, saveState } = require("./database");
+const { refreshClassification } = require("./classification-service");
 const root = __dirname;
 let migration = null;
 const port = Number(process.env.ASSET_COMPASS_PORT) || 8766;
@@ -186,6 +187,18 @@ const handleRequest = async (req, res) => {
   if (req.method === "OPTIONS") return send(res, 204, "", "text/plain");
   if (url.pathname === "/api/v1/market-weather" && req.method === "GET") return send(res, 200, await marketWeather());
   if (url.pathname === "/api/v1/state" && req.method === "GET") return send(res, 200, getState());
+  const classificationRoute = url.pathname.match(/^\/api\/v1\/holdings\/([^/]+)\/classification$/);
+  if (classificationRoute && req.method === "POST") {
+    if (!isSameOriginMutation(req)) return send(res, 403, { error: "Cross-origin state changes are not allowed." });
+    try {
+      // This independent request cannot roll back a previously successful holding save.
+      // Client-supplied patches/force flags are never accepted.
+      const result = await refreshClassification(decodeURIComponent(classificationRoute[1]));
+      return send(res, result.status === "conflict" ? 409 : 200, { classification: result, state: getState() });
+    } catch {
+      return send(res, 502, { error: "classification_failed" });
+    }
+  }
   if (url.pathname === "/api/v1/snapshots" && req.method === "GET") {
     const today = jstToday();
     let from = url.searchParams.has("from") ? url.searchParams.get("from") : null;

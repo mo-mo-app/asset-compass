@@ -61,8 +61,8 @@ function applyServerState(payload) {
   serverConnected = true;
   saveCache();
 }
-async function requestServerState() {
-  const response = await fetch("/api/v1/state", { cache: "no-store" });
+async function requestServerState({ signal } = {}) {
+  const response = await fetch("/api/v1/state", { cache: "no-store", ...(signal ? { signal } : {}) });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(payload.error || `共通データを取得できませんでした（${response.status}）`);
   return payload;
@@ -1342,6 +1342,48 @@ function normalizeIdecoAcquisitionAmount(value) {
 }
 let holdingEditState = null;
 let holdingClassificationEditor = null;
+let holdingSaveInProgress = false;
+function needsAutomaticClassification(holding) {
+  return holding && ["米国株", "日本株"].includes(holding.type) &&
+    !holding.auto_fund_category_code && !holding.user_fund_category_code &&
+    ["sector", "industry", "sensitivity"].some(kind => !holding[`auto_${kind}_code`]);
+}
+async function completeHoldingClassification(holdingId) {
+  const holding = data.holdings.find(item => item.id === holdingId);
+  if (!needsAutomaticClassification(holding)) return;
+  const confirmedData = data, confirmedRevision = serverRevision, confirmedJson = JSON.stringify(data);
+  const applyLatest = payload => {
+    // A delayed response must not replace a newer save or an in-progress local edit.
+    if (payload?.initialized && payload.revision >= serverRevision && data === confirmedData &&
+        serverRevision === confirmedRevision && JSON.stringify(data) === confirmedJson) {
+      applyServerState(payload);
+      render();
+    }
+  };
+  try {
+    const response = await fetch(`/api/v1/holdings/${encodeURIComponent(holdingId)}/classification`, {
+      method: "POST", signal: AbortSignal.timeout(12000)
+    });
+    const payload = await response.json();
+    applyLatest(payload.state);
+    const result = payload.classification;
+    if (!response.ok || !result || !payload.state?.initialized || result.status === "failed" ||
+        result.status === "unclassified" || result.reason === "missing_api_key") {
+      throw new Error("classification_not_applied");
+    }
+  } catch {
+    // A timeout/409/DB/provider failure belongs only to classification, never to the holding save.
+    try { applyLatest(await requestServerState({ signal: AbortSignal.timeout(5000) })); } catch { /* The confirmed holding remains cached. */ }
+    showSyncNotice("銘柄は保存しました。自動分類は反映できませんでした。");
+  }
+}
+function holdingDraftFingerprint() {
+  let classificationPatch;
+  try { classificationPatch = holdingClassificationEditor?.getPatch() || {}; }
+  catch { classificationPatch = { invalid: true }; }
+  return JSON.stringify([...["account", "account-category", "type", "currency", "name", "symbol", "quantity", "cost"]
+    .map(field => $(`#holding-${field}`).value), classificationPatch]);
+}
 let holdingLookupRequest = 0;
 let holdingFieldErrors = { quantity: "", cost: "", form: "" };
 function renderHoldingInputErrors() {
@@ -1513,6 +1555,7 @@ function openHolding(id) {
     holdingClassificationEditor ||= AssetCompassClassificationEditor.createEditor($("#holding-classifications"));
     holdingClassificationEditor.open(holding, $("#holding-type").value);
   }
+  $("#holding-form button[value='default']").disabled = holdingSaveInProgress;
   $("#holding-dialog").showModal();
 }
 function openAccount(id) { const a=data.accounts.find(x=>x.id===id); $("#account-form").reset(); $("#account-id").value=id||""; $("#account-dialog-title").textContent=a?"証券口座を編集":"証券口座を追加"; $("#account-form-kicker").textContent=a?"EDIT ACCOUNT":"NEW ACCOUNT"; if(a){$("#account-name").value=a.name;$("#account-note").value=a.note} $("#account-dialog").showModal(); }
@@ -1777,6 +1820,7 @@ $("#asset-goal-form").addEventListener("input", event => {
 });
 $("#holding-form").addEventListener("submit",async e=>{
   e.preventDefault();
+  if (holdingSaveInProgress) return;
   const type = $("#holding-type").value;
   const symbolField = $("#holding-symbol");
   const ideco = isIdecoCategory($("#holding-account-category").value);
@@ -1832,8 +1876,36 @@ $("#holding-form").addEventListener("submit",async e=>{
       price: null, previousClose: null, priceTimestamp: null, priceDate: null, quoteStatus: "unknown", quoteAttemptedAt: null
     } : {}) };
   } else data.holdings.push(h);
-  try { await persistState(previousData); $("#holding-dialog").close(); }
+  const session = holdingEditState, draft = holdingDraftFingerprint();
+  const saveButton = $("#holding-form button[value='default']"), saveLabel = saveButton.textContent;
+  holdingSaveInProgress = true;
+  saveButton.disabled = true;
+  try {
+    await persistState(previousData);
+    if (needsAutomaticClassification(data.holdings.find(item => item.id === h.id))) saveButton.textContent = "自動分類中…";
+    await completeHoldingClassification(h.id);
+    if (holdingEditState === session && $("#holding-dialog").open) {
+      const unchangedDraft = holdingDraftFingerprint() === draft;
+      // Assign the saved ID even when the user has typed a new draft during classification.
+      $("#holding-id").value = h.id;
+      const latestHolding = data.holdings.find(item => item.id === h.id);
+      if (latestHolding) {
+        session.original = { ...latestHolding };
+        session.originalQuantity = latestHolding.quantity;
+        session.originalCost = latestHolding.cost;
+      }
+      if (unchangedDraft) {
+        holdingClassificationEditor?.open(latestHolding, latestHolding?.type || type);
+        $("#holding-dialog").close();
+      }
+    }
+  }
   catch { /* Keep the dialog open so the user can retry or reapply after a conflict. */ }
+  finally {
+    holdingSaveInProgress = false;
+    saveButton.disabled = false;
+    saveButton.textContent = saveLabel;
+  }
 });
 $("#account-form").addEventListener("submit",async e=>{
   e.preventDefault();

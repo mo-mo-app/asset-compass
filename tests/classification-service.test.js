@@ -128,3 +128,25 @@ test("refresh skips missing holdings and uninitialized state without requesting 
     assert.equal(result.status, "skipped");
   }
 });
+
+test("normal refresh fills each missing-auto combination and never rewrites retained auto or user codes", async () => {
+  const fields = ['auto_sector_code', 'auto_industry_code', 'auto_sensitivity_code'];
+  for (let mask = 1; mask < 8; mask++) {
+    const holding = { ...stock, user_industry_code: 'CUSTOM', user_sensitivity_code: 'DEFENSIVE' };
+    const missing = fields.filter((field, index) => {
+      const missing = Boolean(mask & (1 << index));
+      holding[field] = missing ? null : ['FINANCIALS', 'INSURANCE', 'DEFENSIVE'][index];
+      return missing;
+    });
+    const before = structuredClone(holding);
+    const repository = { getState: () => ({ initialized: true, revision: 1, data: { holdings: [holding] } }),
+      saveAutomaticClassification: (id, revision, patch) => {
+        assert.equal(id, 'h'); assert.equal(revision, 1);
+        assert.deepEqual(Object.keys(patch), missing);
+        assert.ok(Object.values(patch).every(Boolean));
+        return { status: 'updated', revision: 2 };
+      } };
+    assert.equal((await refreshClassification('h', { ...options, repository, fetchImpl: async () => profileResponse('NVDA') })).status, 'updated');
+    assert.deepEqual(holding, before);
+  }
+});

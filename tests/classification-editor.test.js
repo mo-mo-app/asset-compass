@@ -142,13 +142,18 @@ test("holding form submit merges only editor user patch, keeps automatic codes, 
     fixture: { id: "h", accountId: "a", accountCategoryCode: "specified", currency: "USD", symbol: "NVDA", name: "NVDA", quantity: 1, cost: 100, ...stock }, patch: { user_sector_code: "ENERGY" } });
   const source = fs.readFileSync(path.resolve(__dirname, "../app.js"), "utf8");
   vm.runInContext(source.slice(0, source.indexOf("function showSyncNotice")), context);
-  vm.runInContext(`let holdingClassificationEditor = { getPatch: () => patch }; let holdingFieldErrors = {};
+  vm.runInContext(`let holdingClassificationEditor = { getPatch: () => patch, open() {} }; let holdingFieldErrors = {};
+    let holdingSaveInProgress = false; let holdingEditState = { original: fixture };
+    function holdingDraftFingerprint() { return JSON.stringify(patch); }
+    async function completeHoldingClassification() {}
+    function needsAutomaticClassification() { return false; }
     data = { accounts: [], holdings: [fixture] };
     function isIdecoCategory() { return false; } function confirmHoldingSymbolChange() { return false; }
     function validateHoldingField(field) { return { value: field === 'quantity' ? 1 : 100 }; }
     function formatHoldingNumericField() {} function showHoldingInputError(error) { errorMessage = error; }
     function setHoldingFieldError() {} async function persistState() { saved = true; }`, context);
   for (const [selector, value] of [["id", "h"], ["account", "a"], ["account-category", "specified"], ["type", "米国株"], ["currency", "USD"], ["name", "NVDA"], ["symbol", "NVDA"]]) el(`#holding-${selector}`).value = value;
+  el("#holding-dialog").open = true;
   const start = source.indexOf('$("#holding-form").addEventListener("submit",async e=>{');
   vm.runInContext(source.slice(start, source.indexOf('$("#account-form").addEventListener', start)), context);
   await el("#holding-form").handlers.submit({ preventDefault() {} });
