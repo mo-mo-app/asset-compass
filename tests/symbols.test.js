@@ -77,7 +77,8 @@ test("legacy and new Japanese holdings share display, sort, duplicate and heatma
   const { context, element, requested } = appContext([old]);
   context.openHolding("old");
   assert.equal(element("#holding-symbol").value, "9432");
-  assert.match(context.holdingRow(old), /9432 · SBI証券/);
+  assert.match(context.holdingRow(old), /9432<span class="holding-meta-type"> · 日本株<\/span>/);
+  assert.doesNotMatch(context.holdingRow(old), /SBI証券/);
   assert.match(context.dashboardHoldingRow(old), /9432 · SBI証券/);
   assert.doesNotMatch(context.holdingRow(old), /9432\.T/);
   assert.equal(sameHoldingSlot(old, { ...old, symbol: "9432.t" }), true);

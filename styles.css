@@ -696,7 +696,17 @@ html[data-environment="preview"] .sidebar-preview-badge{display:inline-flex;widt
 .classification-pill--sector{color:#765400;background:#fff7d6;border-color:#e8ca67}
 .classification-pill--sensitivity{color:#075c75;background:#e4f7fc;border-color:#82d3e8}
 .classification-pill--fund-category{color:#8a3d08;background:#fff0df;border-color:#efb36e}
+#holdings-view .holding-identity{display:flex;flex-direction:column;align-items:stretch;min-width:0}
+#holdings-view .holding-name{order:0}
+#holdings-view .holding-meta-line{display:contents}
+#holdings-view .holding-meta{order:1}
+#holdings-view .holding-classification-pills{order:2}
+#holdings-view .holding-updated{order:3}
 @media(max-width:600px){
+  #holdings-view .holding-identity{display:grid}
+  #holdings-view .holding-meta-line{grid-column:1 / -1;display:flex;flex-wrap:wrap;align-items:baseline;gap:0 8px;min-width:0}
+  #holdings-view .holding-meta{flex:1 1 auto;min-width:0;white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:anywhere}
+  #holdings-view .holding-updated{flex:0 0 auto;margin:0 0 0 auto;text-align:right;white-space:nowrap}
   #holdings-view .holding-classification-pills{grid-column:1 / -1}
   #holdings-view .classification-pill{font-size:10px}
   html[data-environment="preview"] .mobile-brand{background:#2b203d}

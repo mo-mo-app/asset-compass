@@ -51,3 +51,20 @@ test("holding rows render compact non-industry pills under the ticker using esca
   const empty = ui.context.holdingRow({ id: "e", accountId: "account-1", type: "日本株", name: "分類なし", symbol: "0000", quantity: 1, cost: 1 });
   assert.doesNotMatch(empty, /holding-classification-pills|classification-pill/);
 });
+
+test("holding metadata omits the account and groups stock quote time or fund base date with ticker metadata", () => {
+  const ui = prepare({ type: "米国株", currency: "USD", symbol: "SOXL" });
+  const stock = ui.context.holdingRow({
+    id: "stock", accountId: "account-1", type: "米国株", currency: "USD", name: "Direxion", symbol: "SOXL", quantity: 1, cost: 10,
+    priceTimestamp: Date.UTC(2026, 9, 2, 20, 0)
+  });
+  assert.match(stock, /holding-meta-line[\s\S]*SOXL<span class="holding-meta-type"> · 米国株<\/span>[\s\S]*holding-updated">価格日時 10\/3 05:00/);
+  assert.doesNotMatch(stock, /証券口座1/);
+
+  const fund = ui.context.holdingRow({
+    id: "fund", accountId: "account-1", type: "投資信託", currency: "JPY", name: "インデックスファンド", symbol: "fund", quantity: 1, cost: 10000,
+    priceDate: "10/2"
+  });
+  assert.match(fund, /holding-meta-line[\s\S]*holding-updated">基準日 10\/2/);
+  assert.doesNotMatch(fund, /証券口座1/);
+});
