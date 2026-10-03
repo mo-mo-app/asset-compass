@@ -14,19 +14,18 @@ function element() {
     fire(type) { this.handlers[type]?.({ target: this }); } };
 }
 function editorRoot() {
-  const rows = new Map(editor.fields.map(field => {
-    const controls = { input: element(), status: field.kind === "fundCategory" ? element() : null, auto: field.kind === "fundCategory" ? element() : null, reset: element() };
+  const rows = new Map(editor.fields.filter(field => field.kind !== "industry").map(field => {
+    const controls = { input: element(), status: null, auto: null, reset: element() };
     const row = { hidden: false, querySelector(selector) { return controls[{
-      "input, select": "input", ".classification-status": "status", ".classification-auto": "auto", ".classification-reset": "reset"
+      "input, select": "input", ".classification-reset": "reset"
     }[selector]]; } };
     return [field.kind, { ...controls, row }];
   }));
-  const help = element();
   const root = { innerHTML: "", ownerDocument: { createElement: element },
     querySelector(selector) {
-      return selector === "#classification-industry-help" ? help : rows.get(selector.match(/"([^"]+)"/)[1]).row;
+      return rows.get(selector.match(/"([^"]+)"/)[1]).row;
     } };
-  return { root, rows, help };
+  return { root, rows };
 }
 const stock = { type: "米国株", auto_sector_code: "INFORMATION_TECHNOLOGY", auto_industry_code: "SEMICONDUCTORS",
   auto_sensitivity_code: "CYCLICAL", user_sector_code: "FINANCIALS", user_industry_code: "USER_INDUSTRY", user_sensitivity_code: "DEFENSIVE" };
@@ -38,7 +37,8 @@ test("editor shows user priority without duplicate classification descriptions o
   assert.equal(rows.get("sector").input.value, "FINANCIALS");
   assert.doesNotMatch(root.innerHTML, /classification-(sector|industry|sensitivity)-status/);
   assert.equal(rows.get("sector").auto, null);
-  assert.equal(rows.get("industry").input.value, "USER_INDUSTRY");
+  assert.equal(rows.has("industry"), false);
+  assert.doesNotMatch(root.innerHTML, /classification-industry/);
   assert.equal(rows.get("sensitivity").input.value, "DEFENSIVE");
   assert.deepEqual(ui.getPatch(), {});
   assert.deepEqual(stock, before);
@@ -47,14 +47,14 @@ test("editor shows user priority without duplicate classification descriptions o
 test("select/input edits produce only user fields, and each reset restores the automatic display immediately", () => {
   const { root, rows } = editorRoot(), ui = editor.createEditor(root);
   ui.open(stock, stock.type);
-  for (const [kind, value] of [["sector", "ENERGY"], ["industry", "SOFTWARE_INFRASTRUCTURE"], ["sensitivity", "NEUTRAL"]]) {
+  for (const [kind, value] of [["sector", "ENERGY"], ["sensitivity", "NEUTRAL"]]) {
     rows.get(kind).input.value = value;
-    rows.get(kind).input.fire(kind === "industry" ? "input" : "change");
+    rows.get(kind).input.fire("change");
   }
-  assert.deepEqual(ui.getPatch(), { user_sector_code: "ENERGY", user_industry_code: "SOFTWARE_INFRASTRUCTURE", user_sensitivity_code: "NEUTRAL" });
-  for (const kind of ["sector", "industry", "sensitivity"]) rows.get(kind).reset.fire("click");
-  assert.deepEqual(ui.getPatch(), { user_sector_code: null, user_industry_code: null, user_sensitivity_code: null });
-  for (const field of editor.fields.filter(field => field.group !== "fund")) {
+  assert.deepEqual(ui.getPatch(), { user_sector_code: "ENERGY", user_sensitivity_code: "NEUTRAL" });
+  for (const kind of ["sector", "sensitivity"]) rows.get(kind).reset.fire("click");
+  assert.deepEqual(ui.getPatch(), { user_sector_code: null, user_sensitivity_code: null });
+  for (const field of editor.fields.filter(field => field.group !== "fund" && field.kind !== "industry")) {
     const node = rows.get(field.kind);
     assert.equal(node.input.value, stock[field.auto]);
     assert.equal(node.reset.disabled, true);
@@ -63,10 +63,11 @@ test("select/input edits produce only user fields, and each reset restores the a
   rows.get("fundCategory").reset.fire("click");
   assert.deepEqual(ui.getPatch(), { user_fund_category_code: null });
   assert.equal(rows.get("fundCategory").input.value, "BROAD_INDEX");
+  assert.doesNotMatch(root.innerHTML, /classification-status|classification-auto|表示：|自動値：|ユーザー値：/);
 });
 
-test("stock, fund and existing ETF category codes select the applicable fields without any ETF toggle or inference", () => {
-  const { root, rows, help } = editorRoot(), ui = editor.createEditor(root);
+test("stock, fund and existing ETF category codes select applicable fields without exposing industry", () => {
+  const { root, rows } = editorRoot(), ui = editor.createEditor(root);
   for (const [holding, type, fund] of [
     [{}, "日本株", false], [{}, "米国株", false], [{}, "投資信託", true],
     [{ auto_fund_category_code: "BROAD_INDEX" }, "米国株", true],
@@ -75,11 +76,10 @@ test("stock, fund and existing ETF category codes select the applicable fields w
   ]) {
     ui.open(holding, type);
     assert.equal(rows.get("sector").row.hidden, fund);
-    assert.equal(rows.get("industry").input.disabled, fund);
+    assert.equal(rows.has("industry"), false);
     assert.equal(rows.get("fundCategory").row.hidden, !fund);
     assert.equal(rows.get("sensitivity").row.hidden, false);
-    assert.match(help.textContent, type === "日本株" ? /東証33業種/ : /空欄で自動分類/);
-    assert.doesNotMatch(help.textContent, /米国株は取得元/);
+    assert.doesNotMatch(root.innerHTML, /classification-industry/);
   }
   assert.doesNotMatch(root.innerHTML, /holding-classification-kind/);
   ui.open(stock, "米国株");
@@ -99,10 +99,8 @@ test("unknown existing codes remain visible and unchanged; new invalid edits are
   rows.get("sector").input.value = "not_a_sector"; rows.get("sector").input.fire("change");
   assert.throws(() => ui.getPatch(), /不正/);
   ui.open(stock, "米国株");
-  rows.get("industry").input.value = "業種名"; rows.get("industry").input.fire("input");
-  assert.throws(() => ui.getPatch(), /不正/);
-  rows.get("industry").input.value = ""; rows.get("industry").input.fire("input");
-  assert.deepEqual(ui.getPatch(), { user_industry_code: null });
+  assert.equal(rows.has("industry"), false);
+  assert.deepEqual(ui.getPatch(), {});
 });
 
 test("saving omits every automatic field without mutating cache data or user overrides", () => {
@@ -171,7 +169,7 @@ test("holding form submit merges only editor user patch, keeps automatic codes, 
   assert.equal(masters.getEffectiveCode(saved, "sector"), "ENERGY");
 });
 
-test("new stock classification defaults to automatic selects and an empty industry with an automatic placeholder", () => {
+test("new stock classification defaults to automatic selects and does not expose internal industry codes", () => {
   const { root, rows } = editorRoot(), ui = editor.createEditor(root);
   for (const type of ['米国株', '日本株']) {
     ui.open(null, type);
@@ -180,8 +178,8 @@ test("new stock classification defaults to automatic selects and an empty indust
       assert.equal(rows.get(kind).input.options[0].textContent, '自動分類を使用');
       assert.equal(rows.get(kind).input.options[0].value, '');
     }
-    assert.equal(rows.get('industry').input.value, '');
-    assert.match(root.innerHTML, /id="classification-industry" placeholder="自動分類を使用"/);
+    assert.equal(rows.has('industry'), false);
+    assert.doesNotMatch(root.innerHTML, /classification-industry/);
     assert.deepEqual(ui.getPatch(), {});
   }
 });
@@ -192,10 +190,12 @@ test("reopening selects user then auto then automatic-use fallback for each stoc
     { type: '米国株', user_sector_code: null, auto_sector_code: null, user_industry_code: null, auto_industry_code: null }]) {
     const before = structuredClone(fields);
     ui.open(fields, '米国株');
-    for (const field of editor.fields.filter(field => field.group !== 'fund')) {
+    for (const field of editor.fields.filter(field => field.group !== 'fund' && field.kind !== 'industry')) {
       assert.equal(rows.get(field.kind).input.value, fields[field.user] ?? fields[field.auto] ?? '');
     }
     assert.deepEqual(ui.getPatch(), {});
     assert.deepEqual(fields, before);
+    assert.equal(fields.user_industry_code, before.user_industry_code);
+    assert.equal(fields.auto_industry_code, before.auto_industry_code);
   }
 });

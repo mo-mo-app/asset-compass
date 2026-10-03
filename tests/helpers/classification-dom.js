@@ -6,18 +6,17 @@ function element() {
     fire(type) { this.handlers[type]?.({ target: this }); } };
 }
 function editorRoot() {
-  const rows = new Map(editor.fields.map(field => {
-    const controls = { input: element(), status: field.kind === "fundCategory" ? element() : null, auto: field.kind === "fundCategory" ? element() : null, reset: element() };
+  const rows = new Map(editor.fields.filter(field => field.kind !== "industry").map(field => {
+    const controls = { input: element(), status: null, auto: null, reset: element() };
     const row = { hidden: false, querySelector(selector) { return controls[{
-      "input, select": "input", ".classification-status": "status", ".classification-auto": "auto", ".classification-reset": "reset"
+      "input, select": "input", ".classification-reset": "reset"
     }[selector]]; } };
     return [field.kind, { ...controls, row }];
   }));
-  const help = element();
   const root = { innerHTML: "", ownerDocument: { createElement: element },
     querySelector(selector) {
-      return selector === "#classification-industry-help" ? help : rows.get(selector.match(/"([^"]+)"/)[1]).row;
+      return rows.get(selector.match(/"([^"]+)"/)[1]).row;
     } };
-  return { root, rows, help };
+  return { root, rows };
 }
 module.exports = { editorRoot };

@@ -39,27 +39,20 @@
   function inferKind(holding) {
     return holding?.type === "投資信託" || holding?.user_fund_category_code != null || holding?.auto_fund_category_code != null ? "fund" : "stock";
   }
-  function formatCode(kind, code) {
-    return code == null ? "未設定" : masters.getLabel(kind, code) || code;
-  }
-
   function createEditor(root) {
+    // Industry codes remain part of the classification schema and save flow, but are
+    // intentionally not exposed in this editor so a later analysis UI can reuse them.
+    const editableFields = fields.filter(field => field.kind !== "industry");
     root.innerHTML = `<h3>資産分類</h3><p class="classification-note">ユーザー設定を優先して表示します。変更は「保存する」で確定します。</p>
-      ${fields.map(field => `<div class="classification-field" data-classification="${field.kind}">
+      ${editableFields.map(field => `<div class="classification-field" data-classification="${field.kind}">
         <label for="classification-${field.kind}">${field.label}</label>
-        ${field.master ? `<select id="classification-${field.kind}"${field.kind === "fundCategory" ? ' aria-describedby="classification-fundCategory-status"' : ""}></select>` :
-          `<input id="classification-${field.kind}" placeholder="自動分類を使用" maxlength="128" autocomplete="off" spellcheck="false" aria-describedby="classification-industry-help" />
-          <small id="classification-industry-help"></small>`}
-        ${field.kind === "fundCategory" ? `<p class="classification-status" id="classification-fundCategory-status" aria-live="polite"></p>
-        <small class="classification-auto"></small>` : ""}
+        ${field.master ? `<select id="classification-${field.kind}"></select>` :
+          `<input id="classification-${field.kind}" placeholder="自動分類を使用" maxlength="128" autocomplete="off" spellcheck="false" />`}
         <button type="button" class="text-button classification-reset" aria-label="${field.label}を自動分類に戻す">自動分類に戻す</button>
       </div>`).join("")}`;
-    const nodes = new Map(fields.map(field => {
+    const nodes = new Map(editableFields.map(field => {
       const row = root.querySelector(`[data-classification="${field.kind}"]`);
-      return [field.kind, { row, input: row.querySelector("input, select"),
-        status: field.kind === "fundCategory" ? row.querySelector(".classification-status") : null,
-        auto: field.kind === "fundCategory" ? row.querySelector(".classification-auto") : null,
-        reset: row.querySelector(".classification-reset") }];
+      return [field.kind, { row, input: row.querySelector("input, select"), reset: row.querySelector(".classification-reset") }];
     }));
     let original = {}, draft = {}, type = "日本株";
     const dirty = new Set();
@@ -80,20 +73,12 @@
         node.input.replaceChildren(...options);
       }
       if (updateInput) node.input.value = effective ?? "";
-      if (node.status) {
-        node.status.textContent = `表示：${formatCode(field.kind, effective)}（${user != null ? "ユーザー設定" : "自動"}）`;
-        node.status.dataset.source = user != null ? "user" : "auto";
-        node.auto.textContent = `自動値：${formatCode(field.kind, auto)} ／ ユーザー値：${formatCode(field.kind, user)}`;
-      }
       node.reset.disabled = user == null;
     }
     function render() {
-      root.querySelector("#classification-industry-help").textContent = (type === "日本株"
-        ? "日本株は東証33業種由来のコード（例：INSURANCE、INFORMATION_COMMUNICATIONS）。"
-        : "") + " 半角英数字・_ . : -、128文字以内。空欄で自動分類に戻ります。";
-      for (const field of fields) renderField(field);
+      for (const field of editableFields) renderField(field);
     }
-    for (const field of fields) {
+    for (const field of editableFields) {
       const node = nodes.get(field.kind);
       node.input.addEventListener("change", () => {
         draft[field.user] = node.input.value.trim() || null;
@@ -119,7 +104,7 @@
       setType(assetType) { type = assetType; render(); },
       getPatch() {
         const patch = {};
-        for (const field of fields) {
+        for (const field of editableFields) {
           if (!active(field) || !dirty.has(field.user)) continue;
           const value = draft[field.user] ?? null;
           if (!validateUserCode(field.kind, value)) throw new Error(`${field.label}のコードが不正です。`);

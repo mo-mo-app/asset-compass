@@ -1437,6 +1437,15 @@ function clearHoldingNumbers(message, costOnly = false) {
   showHoldingInputError(message);
   refreshIdecoAcquisitionUnitPreview();
 }
+function clearHoldingIdentityInputs() {
+  // A response started for the previous asset/category must not repopulate the cleared fields.
+  holdingLookupRequest++;
+  clearHoldingInput("#holding-name");
+  clearHoldingInput("#holding-symbol");
+  $("#holding-symbol").disabled = false;
+  $("#lookup-name").disabled = false;
+  $("#name-lookup-status").textContent = "銘柄名とコードを再入力してください。";
+}
 function validateHoldingField(field) {
   const context = holdingFormContext();
   const original = field === "quantity" ? holdingEditState?.originalQuantity : holdingEditState?.originalCost;
@@ -1454,6 +1463,7 @@ function handleHoldingClassificationChange() {
   updateHoldingFormLabels();
   const current = holdingFormContext();
   if (previous && (previous.type !== current.type || isIdecoCategory(previous.accountCategoryCode) !== isIdecoCategory(current.accountCategoryCode))) {
+    clearHoldingIdentityInputs();
     clearHoldingNumbers("資産区分・口座区分が変更されたため、保有数量と取得値をクリアしました。\n新しい区分の値を入力してください。");
   } else if (previous && previous.currency !== current.currency) {
     clearHoldingNumbers("通貨が変更されたため、取得値をクリアしました。\n新しい通貨の値を入力してください。", true);
@@ -1516,9 +1526,10 @@ function updateHoldingFormLabels() {
   $("#holding-quantity").placeholder = isFund ? "例：150000" : "例：100";
   $("#holding-cost").placeholder = ideco ? "例：273948" : isFund ? "例：10000" : "例：2500";
   $("#holding-symbol").placeholder = isFund ? "例：9I311181" : type === "日本株" ? "例：7203 / 563A" : "例：AAPL";
-  $("#holding-symbol-label").textContent = isFund ? "投信コード" : "Yahoo Finance ティッカー";
+  $("#holding-symbol-label").textContent = `${isFund ? "投信コード" : "Yahoo Finance ティッカー"} *`;
   $("#holding-symbol-help").textContent = isFund ? "半角英数字8文字。銘柄名・基準価額を取得します。" : "このティッカーで価格を自動取得します";
   $("#fund-unit-note").hidden = !isFund;
+  $("#holding-name-label").textContent = "銘柄名 *";
   holdingClassificationEditor?.setType($("#holding-type").value);
   refreshIdecoAcquisitionUnitPreview();
 }
