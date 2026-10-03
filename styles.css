@@ -564,7 +564,7 @@
 .goal-achievement-center span{color:#b9cfca;font-size:11px}
 .goal-achievement-center strong{font:600 clamp(21px,2.2vw,29px) "DM Mono","Noto Sans JP",monospace;letter-spacing:-.06em;color:#fff;white-space:nowrap}
 .goal-result-panel .goal-summary{grid-area:summary;min-width:0;margin:0;color:#d2e5de;font-size:13px;line-height:1.6}
-.goal-input-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
+.goal-input-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:14px}
 .goal-field{display:grid;align-content:start;gap:6px;min-width:0;font-size:12px;font-weight:600}
 .goal-field small{color:var(--muted);font-size:10px;font-weight:400}
 .goal-input-wrap{display:flex;align-items:center;gap:8px;min-width:0}
@@ -577,6 +577,9 @@
 .goal-form-actions .button{white-space:nowrap}
 .goal-form-actions .goal-error{grid-column:1;grid-row:1}
 .goal-form-actions .button{grid-column:2;grid-row:1}
+.goal-save-actions{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:8px;margin-top:12px}
+.goal-save-actions #goal-settings-status{margin-right:auto;color:var(--muted);font-size:11px}
+.goal-save-actions #goal-settings-status:empty{display:none}
 .goal-error{color:var(--loss-color);font-size:11px;line-height:1.5}
 .goal-error[hidden]{display:none}
 .goal-chart-panel[hidden]{display:none}
@@ -649,6 +652,9 @@
   .goal-chart-x-label{font-size:10px}
   .goal-form-actions{display:flex;align-items:stretch;flex-direction:column-reverse}
   .goal-form-actions .button{width:100%}
+  .goal-save-actions{align-items:stretch;flex-direction:column}
+  .goal-save-actions .button{width:100%}
+  .goal-save-actions #goal-settings-status{margin-right:0}
 }
 @media(min-width:601px){
   #dashboard-view .dashboard-status-row{margin-top:0px;margin-bottom:10px}

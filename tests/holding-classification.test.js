@@ -164,7 +164,7 @@ test("instrument_kind migrates as nullable, persists through saves, preserves om
   assert.equal(state.data.holdings.find(holding => holding.id === "etf").instrument_kind, null);
   const { DatabaseSync } = require("node:sqlite");
   const db = new DatabaseSync(path.join(folder, "state.sqlite"));
-  assert.equal(db.prepare("PRAGMA user_version").get().user_version, 6);
+  assert.equal(db.prepare("PRAGMA user_version").get().user_version, 7);
   const column = db.prepare("PRAGMA table_info(holdings)").all().find(item => item.name === "instrument_kind");
   assert.equal(column.notnull, 0);
   assert.throws(() => db.prepare("UPDATE holdings SET instrument_kind = 'FUND' WHERE id = 'stock'").run(), /CHECK constraint/);
@@ -212,7 +212,7 @@ test("v4 migration adds nullable classification and instrument columns without r
     const result = migrate(file);
     assert.equal(result.status, 0, result.stderr.toString());
     const db = new DatabaseSync(file);
-    assert.equal(db.prepare("PRAGMA user_version").get().user_version, 6);
+    assert.equal(db.prepare("PRAGMA user_version").get().user_version, 7);
     for (const table of tables) {
       const rows = db.prepare(`SELECT * FROM ${table}`).all();
       if (table === "holdings") for (const row of rows) {

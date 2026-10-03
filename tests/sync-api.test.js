@@ -66,12 +66,52 @@ test("SQLite state API migrates once, saves by revision, rejects stale writes, a
   assert.equal(initial.revision, 0);
   assert.equal(initial.data.usdJpyRate, null);
   assert.equal(initial.data.lastQuoteFetchedAt, null);
+  assert.deepEqual(await (await fetch(`${base}/api/v1/asset-goal-settings`)).json(), { settings: null });
   assert.deepEqual(initial.data.accountCategories.map(category => [category.code, category.sortOrder]), [
     ["nisa_tsumitate", 10], ["nisa_growth", 20], ["specified", 30],
     ["ideco", 40], ["other", 50], ["unassigned", 90]
   ]);
   assert.equal(initial.data.accountCategories.find(category => category.code === "nisa_growth").label, "NISA成長投資枠");
   assert.equal(initialResponse.headers.get("access-control-allow-origin"), null);
+
+  const goalSettingsUrl = `${base}/api/v1/asset-goal-settings`;
+  const firstGoalSettings = {
+    target_amount: 85000000,
+    annual_return_rate: 5.5,
+    monthly_contribution: 125000,
+    start_month: "2026-10",
+    show_on_dashboard: false
+  };
+  const firstGoalSave = await fetch(goalSettingsUrl, {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ settings: firstGoalSettings })
+  });
+  assert.equal(firstGoalSave.status, 200);
+  assert.deepEqual((await firstGoalSave.json()).settings, firstGoalSettings);
+  assert.deepEqual(await (await fetch(goalSettingsUrl)).json(), { settings: firstGoalSettings }, "goal settings can be reloaded independently of app state");
+  const updatedGoalSettings = { ...firstGoalSettings, target_amount: 92000000, show_on_dashboard: true };
+  const updatedGoalSave = await fetch(goalSettingsUrl, {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ settings: updatedGoalSettings })
+  });
+  assert.equal(updatedGoalSave.status, 200);
+  assert.deepEqual((await updatedGoalSave.json()).settings, updatedGoalSettings, "updating uses the same single settings row");
+  const goalSettingsDb = new DatabaseSync(dbPath);
+  assert.equal(goalSettingsDb.prepare("SELECT count(*) AS count FROM asset_goal_settings").get().count, 1);
+  goalSettingsDb.close();
+  for (const invalidSettings of [
+    { target_amount: 0 },
+    { annual_return_rate: -100 },
+    { monthly_contribution: -1 },
+    { start_month: "2026-13" },
+    { show_on_dashboard: 1 }
+  ]) {
+    const response = await fetch(goalSettingsUrl, {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ settings: { ...updatedGoalSettings, ...invalidSettings } })
+    });
+    assert.equal(response.status, 400, `${Object.keys(invalidSettings)[0]} is validated`);
+  }
+  assert.deepEqual(await (await fetch(goalSettingsUrl)).json(), { settings: updatedGoalSettings }, "invalid updates leave the last saved settings intact");
+  assert.equal((await (await fetch(`${base}/api/v1/state`)).json()).revision, 0, "goal settings do not advance holdings revision");
 
   const localData = {
     accounts: [{ id: "account-1", name: "SBI証券", note: "NISA" }],
@@ -236,7 +276,7 @@ test("SQLite state API migrates once, saves by revision, rejects stale writes, a
 
   assert.equal(fs.existsSync(dbPath), true);
   const db = new DatabaseSync(dbPath);
-  assert.equal(db.prepare("PRAGMA user_version").get().user_version, 6);
+  assert.equal(db.prepare("PRAGMA user_version").get().user_version, 7);
   const tableCount = db.prepare("SELECT count(*) AS count FROM sqlite_master WHERE type = 'table' AND name IN ('app_state','accounts','holdings','holding_quotes','fx_rates')").get().count;
   assert.equal(tableCount, 5);
   assert.equal(db.prepare("PRAGMA foreign_key_list(holdings)").all().some(row => row.table === "accounts" && row.from === "account_id"), true);
@@ -251,6 +291,7 @@ test("SQLite state API migrates once, saves by revision, rejects stale writes, a
 
   await startServer();
   const afterRestart = await (await fetch(`${base}/api/v1/state`)).json();
+  assert.deepEqual(await (await fetch(goalSettingsUrl)).json(), { settings: updatedGoalSettings }, "asset goal settings persist across server restarts");
   assert.equal(afterRestart.revision, 4);
   assert.equal(afterRestart.data.usdJpyRate, 159.82);
   assert.equal(afterRestart.data.holdings[0].quantity, 3);
@@ -352,7 +393,7 @@ test("SQLite state API migrates once, saves by revision, rejects stale writes, a
   });
   assert.equal(migrationRun.status, 0, migrationRun.stderr.toString());
   const upgradedDb = new DatabaseSync(legacyDbPath);
-  assert.equal(upgradedDb.prepare("PRAGMA user_version").get().user_version, 6);
+  assert.equal(upgradedDb.prepare("PRAGMA user_version").get().user_version, 7);
   assert.equal(upgradedDb.prepare("SELECT name FROM accounts WHERE id = 'legacy-account'").get().name, "既存口座");
   assert.equal(upgradedDb.prepare("SELECT revision FROM app_state WHERE singleton_id = 1").get().revision, 8);
   assert.equal(upgradedDb.prepare("SELECT price FROM holding_quotes").get().price, 100);
@@ -404,7 +445,7 @@ test("v3 upgrade preserves accounts, quotes, FX, snapshots and revision", () => 
     assert.equal(result.status, 0, result.stderr.toString());
     const upgraded = new DatabaseSync(upgradePath);
     upgraded.exec("PRAGMA foreign_keys = ON");
-    assert.equal(upgraded.prepare("PRAGMA user_version").get().user_version, 6);
+    assert.equal(upgraded.prepare("PRAGMA user_version").get().user_version, 7);
     assert.equal(upgraded.prepare("SELECT revision FROM app_state").get().revision, 7);
     assert.deepEqual(upgraded.prepare("SELECT * FROM accounts").get(), accountBefore);
     assert.deepEqual(upgraded.prepare("SELECT * FROM holding_quotes").get(), quoteBefore);
@@ -418,4 +459,27 @@ test("v3 upgrade preserves accounts, quotes, FX, snapshots and revision", () => 
     assert.deepEqual(upgraded.prepare("PRAGMA foreign_key_check").all(), []);
     upgraded.close();
   }
+});
+
+test("v6 migration adds the single asset goal settings table without changing holdings", () => {
+  const upgradePath = path.join(tempDir, "legacy-v6.sqlite");
+  const legacy = new DatabaseSync(upgradePath);
+  legacy.exec(`
+    CREATE TABLE holdings (id TEXT PRIMARY KEY, symbol TEXT NOT NULL);
+    INSERT INTO holdings VALUES ('keep-me', '7203.T');
+    PRAGMA user_version = 6;
+  `);
+  legacy.close();
+
+  const migrationRun = spawnSync(process.execPath, ["-e", "require('./database').db.close()"], {
+    cwd: projectRoot, env: { ...process.env, ASSET_COMPASS_DB_PATH: upgradePath }
+  });
+  assert.equal(migrationRun.status, 0, migrationRun.stderr.toString());
+
+  const upgraded = new DatabaseSync(upgradePath);
+  assert.equal(upgraded.prepare("PRAGMA user_version").get().user_version, 7);
+  assert.deepEqual({ ...upgraded.prepare("SELECT * FROM holdings").get() }, { id: "keep-me", symbol: "7203.T" });
+  assert.deepEqual(upgraded.prepare("SELECT * FROM asset_goal_settings").all(), []);
+  assert.equal(upgraded.prepare("SELECT count(*) AS count FROM sqlite_master WHERE type = 'table' AND name = 'asset_goal_settings'").get().count, 1);
+  upgraded.close();
 });

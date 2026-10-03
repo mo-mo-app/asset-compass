@@ -19,7 +19,7 @@ db.exec("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA busy_timeou
 
 function runMigrations() {
   const currentVersion = db.prepare("PRAGMA user_version").get().user_version;
-  if (currentVersion > 6) throw new Error(`Database schema version ${currentVersion} is newer than this application supports.`);
+  if (currentVersion > 7) throw new Error(`Database schema version ${currentVersion} is newer than this application supports.`);
 
   if (currentVersion === 0) {
     db.exec("BEGIN IMMEDIATE");
@@ -230,6 +230,33 @@ function runMigrations() {
         ALTER TABLE holdings ADD COLUMN instrument_kind TEXT
           CHECK (instrument_kind IS NULL OR (type IN ('日本株', '米国株') AND instrument_kind IN ('STOCK', 'ETF')));
         PRAGMA user_version = 6;
+        COMMIT;
+      `);
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+  if (db.prepare("PRAGMA user_version").get().user_version < 7) {
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      db.exec(`
+        CREATE TABLE asset_goal_settings (
+          singleton_id INTEGER NOT NULL PRIMARY KEY CHECK (singleton_id = 1),
+          target_amount REAL NOT NULL CHECK (target_amount > 0),
+          annual_return_rate REAL NOT NULL CHECK (annual_return_rate > -100),
+          monthly_contribution REAL NOT NULL CHECK (monthly_contribution >= 0),
+          start_month TEXT NOT NULL CHECK (
+            length(start_month) = 7 AND
+            substr(start_month, 1, 4) GLOB '[0-9][0-9][0-9][0-9]' AND
+            substr(start_month, 1, 4) != '0000' AND
+            substr(start_month, 5, 1) = '-' AND
+            substr(start_month, 6, 2) GLOB '[0-9][0-9]' AND
+            substr(start_month, 6, 2) BETWEEN '01' AND '12'
+          ),
+          show_on_dashboard INTEGER NOT NULL CHECK (show_on_dashboard IN (0, 1))
+        );
+        PRAGMA user_version = 7;
         COMMIT;
       `);
     } catch (error) {
@@ -642,4 +669,48 @@ function saveAutomaticClassification(holdingId, expectedRevision, patch) {
   });
 }
 
-module.exports = { databasePath, db, getState, getSnapshots, migrateLocalState, saveState, saveAutomaticClassification };
+function getAssetGoalSettings() {
+  const row = db.prepare(`
+    SELECT target_amount, annual_return_rate, monthly_contribution, start_month, show_on_dashboard
+    FROM asset_goal_settings WHERE singleton_id = 1
+  `).get();
+  return row ? {
+    target_amount: row.target_amount,
+    annual_return_rate: row.annual_return_rate,
+    monthly_contribution: row.monthly_contribution,
+    start_month: row.start_month,
+    show_on_dashboard: Boolean(row.show_on_dashboard)
+  } : null;
+}
+
+function saveAssetGoalSettings(input) {
+  if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("settings must be an object.");
+  const { target_amount, annual_return_rate, monthly_contribution, start_month, show_on_dashboard } = input;
+  if (typeof target_amount !== "number" || !Number.isFinite(target_amount) || target_amount <= 0) {
+    throw new Error("target_amount must be a finite number greater than zero.");
+  }
+  if (typeof annual_return_rate !== "number" || !Number.isFinite(annual_return_rate) || annual_return_rate <= -100) {
+    throw new Error("annual_return_rate must be a finite number greater than -100.");
+  }
+  if (typeof monthly_contribution !== "number" || !Number.isFinite(monthly_contribution) || monthly_contribution < 0) {
+    throw new Error("monthly_contribution must be a finite non-negative number.");
+  }
+  if (typeof start_month !== "string" || !/^\d{4}-(0[1-9]|1[0-2])$/.test(start_month) || start_month.startsWith("0000")) {
+    throw new Error("start_month must be a valid YYYY-MM month.");
+  }
+  if (typeof show_on_dashboard !== "boolean") throw new Error("show_on_dashboard must be a boolean.");
+  db.prepare(`
+    INSERT INTO asset_goal_settings (
+      singleton_id, target_amount, annual_return_rate, monthly_contribution, start_month, show_on_dashboard
+    ) VALUES (1, ?, ?, ?, ?, ?)
+    ON CONFLICT(singleton_id) DO UPDATE SET
+      target_amount = excluded.target_amount,
+      annual_return_rate = excluded.annual_return_rate,
+      monthly_contribution = excluded.monthly_contribution,
+      start_month = excluded.start_month,
+      show_on_dashboard = excluded.show_on_dashboard
+  `).run(target_amount, annual_return_rate, monthly_contribution, start_month, Number(show_on_dashboard));
+  return getAssetGoalSettings();
+}
+
+module.exports = { databasePath, db, getState, getSnapshots, migrateLocalState, saveState, saveAutomaticClassification, getAssetGoalSettings, saveAssetGoalSettings };

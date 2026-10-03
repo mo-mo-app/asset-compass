@@ -4,7 +4,7 @@ const path = require("path");
 const os = require("os");
 const { stockQuoteFromChart, fundPreviousClose } = require("./quote-data");
 const { toQuoteSymbol } = require("./symbols");
-const { getState, getSnapshots, migrateLocalState, saveState } = require("./database");
+const { getState, getSnapshots, migrateLocalState, saveState, getAssetGoalSettings, saveAssetGoalSettings } = require("./database");
 const { refreshClassification } = require("./classification-service");
 const { renderIndexHtml } = require("./environment-view");
 const root = __dirname;
@@ -200,6 +200,16 @@ const handleRequest = async (req, res) => {
   if (req.method === "OPTIONS") return send(res, 204, "", "text/plain");
   if (url.pathname === "/api/v1/market-weather" && req.method === "GET") return send(res, 200, await marketWeather());
   if (url.pathname === "/api/v1/state" && req.method === "GET") return send(res, 200, getState());
+  if (url.pathname === "/api/v1/asset-goal-settings" && req.method === "GET") {
+    return send(res, 200, { settings: getAssetGoalSettings() });
+  }
+  if (url.pathname === "/api/v1/asset-goal-settings" && req.method === "PUT") {
+    if (!isSameOriginMutation(req)) return send(res, 403, { error: "Cross-origin state changes are not allowed." });
+    try {
+      const body = await readJson(req);
+      return send(res, 200, { settings: saveAssetGoalSettings(body?.settings) });
+    } catch (error) { return apiError(res, error); }
+  }
   const classificationRoute = url.pathname.match(/^\/api\/v1\/holdings\/([^/]+)\/classification$/);
   if (classificationRoute && req.method === "POST") {
     if (!isSameOriginMutation(req)) return send(res, 403, { error: "Cross-origin state changes are not allowed." });

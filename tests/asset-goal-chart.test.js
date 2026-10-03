@@ -11,7 +11,7 @@ function goalChartContext(innerWidth = 1280) {
   const elements = new Map();
   const element = selector => {
     if (!elements.has(selector)) elements.set(selector, {
-      textContent: "", innerHTML: "", hidden: false, dataset: {}, style: { setProperty() {} }, clientWidth: 360, clientHeight: innerWidth <= 600 ? 270 : 330,
+      value: "", textContent: "", innerHTML: "", hidden: false, disabled: false, dataset: {}, style: { setProperty() {} }, clientWidth: 360, clientHeight: innerWidth <= 600 ? 270 : 330,
       attributes: new Map(),
       setAttribute(name, value) { this.attributes.set(name, value); },
       replaceChildren() { this.innerHTML = ""; }
@@ -37,6 +37,59 @@ const baseInput = {
   annualReturnRate: 7,
   startDate: "2026-09"
 };
+
+test("missing saved goal settings preserve form defaults and only initialize the start month", async () => {
+  const { context, element } = goalChartContext();
+  element("#goal-current-assets").value = "123,456";
+  element("#goal-target-assets").value = "100,000,000";
+  element("#goal-monthly-contribution").value = "0";
+  element("#goal-annual-return").value = "7";
+  context.fetch = async () => ({ ok: true, json: async () => ({ settings: null }) });
+
+  assert.equal(await context.loadAssetGoalSettings(), null);
+  assert.equal(element("#goal-current-assets").value, "123,456");
+  assert.equal(element("#goal-target-assets").value, "100,000,000");
+  assert.equal(element("#goal-monthly-contribution").value, "0");
+  assert.equal(element("#goal-annual-return").value, "7");
+  assert.match(element("#goal-start-month").value, /^\d{4}-(0[1-9]|1[0-2])$/);
+});
+
+test("saved goal settings restore and save inputs separately from current assets", async () => {
+  const { context, element } = goalChartContext();
+  const settings = {
+    target_amount: 85000000,
+    annual_return_rate: 5.5,
+    monthly_contribution: 125000,
+    start_month: "2026-10",
+    show_on_dashboard: false
+  };
+  let persisted = settings;
+  let savedBody = null;
+  let topView = null;
+  context.fetch = async (_url, options) => {
+    if (!options?.method) return { ok: true, json: async () => ({ settings: persisted }) };
+    savedBody = JSON.parse(options.body).settings;
+    persisted = savedBody;
+    return { ok: true, json: async () => ({ settings: persisted }) };
+  };
+  context.showAppView = view => { topView = view; };
+  element("#goal-current-assets").value = "4,500,000";
+
+  assert.deepEqual(JSON.parse(JSON.stringify(await context.loadAssetGoalSettings())), settings);
+  assert.equal(element("#goal-target-assets").value, "85,000,000");
+  assert.equal(element("#goal-monthly-contribution").value, "125,000");
+  assert.equal(element("#goal-annual-return").value, "5.5");
+  assert.equal(element("#goal-start-month").value, "2026-10");
+  assert.equal(element("#goal-current-assets").value, "4,500,000", "current assets are not part of the saved settings");
+
+  await context.saveAssetGoalSettings(false);
+  assert.deepEqual(savedBody, settings);
+  assert.equal(topView, null);
+  await context.saveAssetGoalSettings(true);
+  assert.equal(savedBody.show_on_dashboard, true);
+  assert.equal(topView, null, "saving for TOP keeps the goal details open");
+  assert.equal(element("#goal-settings-status").textContent, "目標設定を保存しました。");
+});
 
 test("standard goal simulation draws asset and target lines with the exact goal month", () => {
   const { context, element } = goalChartContext();

@@ -127,7 +127,7 @@ test("state API enforces new numeric precision while preserving unchanged legacy
   assert.equal(persisted.data.holdings.find(holding => holding.id === "ideco").cost, 273948 / 163067 * 10000);
   const { DatabaseSync } = require("node:sqlite");
   const db = new DatabaseSync(dbPath);
-  assert.equal(db.prepare("PRAGMA user_version").get().user_version, 6);
+  assert.equal(db.prepare("PRAGMA user_version").get().user_version, 7);
   assert.equal(db.prepare("SELECT cost FROM holdings WHERE id='ideco'").get().cost, 273948 / 163067 * 10000);
   db.close();
 });

@@ -667,6 +667,67 @@ function renderGoalSimulationResults(result, targetAssets) {
   $("#goal-result-panel").dataset.hasResult = "true";
   renderGoalChart(result, targetAssets);
 }
+function currentGoalMonth() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+}
+function parseGoalSettingNumber(selector) {
+  const raw = $(selector).value.trim().replaceAll(",", "");
+  return raw === "" ? NaN : Number(raw);
+}
+function applyAssetGoalSettings(settings) {
+  if (!settings) {
+    if (!$("#goal-start-month").value) $("#goal-start-month").value = currentGoalMonth();
+    return;
+  }
+  $("#goal-target-assets").value = goalInputNumber.format(settings.target_amount);
+  $("#goal-monthly-contribution").value = goalInputNumber.format(settings.monthly_contribution);
+  $("#goal-annual-return").value = String(settings.annual_return_rate);
+  $("#goal-start-month").value = settings.start_month;
+}
+async function loadAssetGoalSettings() {
+  try {
+    const response = await fetch("/api/v1/asset-goal-settings", { cache: "no-store" });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || `目標設定を取得できませんでした（${response.status}）`);
+    applyAssetGoalSettings(payload.settings || null);
+    return payload.settings || null;
+  } catch {
+    applyAssetGoalSettings(null);
+    return null;
+  }
+}
+async function saveAssetGoalSettings(showOnDashboard = false) {
+  const settingsStatus = $("#goal-settings-status");
+  const saveButtons = [$("#goal-save-settings"), $("#goal-save-settings-dashboard")];
+  const annualReturnRaw = $("#goal-annual-return").value.trim();
+  const settings = {
+    target_amount: parseGoalSettingNumber("#goal-target-assets"),
+    annual_return_rate: annualReturnRaw === "" ? NaN : Number(annualReturnRaw),
+    monthly_contribution: parseGoalSettingNumber("#goal-monthly-contribution"),
+    start_month: $("#goal-start-month").value,
+    show_on_dashboard: Boolean(showOnDashboard)
+  };
+  settingsStatus.textContent = "";
+  saveButtons.forEach(button => { button.disabled = true; });
+  try {
+    const response = await fetch("/api/v1/asset-goal-settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ settings })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || `目標設定を保存できませんでした（${response.status}）`);
+    applyAssetGoalSettings(payload.settings);
+    settingsStatus.textContent = "目標設定を保存しました。";
+    return payload.settings;
+  } catch (error) {
+    settingsStatus.textContent = `目標設定を保存できませんでした。${error.message}`;
+    return null;
+  } finally {
+    saveButtons.forEach(button => { button.disabled = false; });
+  }
+}
 function runGoalSimulation(event) {
   event.preventDefault();
   const currentAssetsInput = $("#goal-current-assets");
@@ -692,8 +753,7 @@ function runGoalSimulation(event) {
   const targetAssets = Number(targetAssetsRaw);
   const monthlyContribution = Number(monthlyContributionRaw);
   const annualReturnRate = annualRateInput === "" ? NaN : Number(annualRateInput);
-  const now = new Date();
-  const startDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const startDate = $("#goal-start-month").value || currentGoalMonth();
   $("#goal-error").hidden = true;
   $("#goal-error").textContent = "";
   try {
@@ -1857,6 +1917,8 @@ $("#asset-goal-form").addEventListener("input", event => {
   if (event.target.id === "goal-current-assets") event.target.dataset.userEdited = "true";
   $("#goal-error").hidden = true;
 });
+$("#goal-save-settings").addEventListener("click", () => { void saveAssetGoalSettings(false); });
+$("#goal-save-settings-dashboard").addEventListener("click", () => { void saveAssetGoalSettings(true); });
 ["#goal-current-assets", "#goal-target-assets", "#goal-monthly-contribution"].forEach(selector => {
   $(selector).addEventListener("blur", event => {
     const raw = event.target.value.trim().replaceAll(",", "");
@@ -2038,6 +2100,7 @@ async function boot() {
   render();
   void loadMarketWeather();
   await loadServerState();
+  await loadAssetGoalSettings();
   await loadAssetTrend();
 }
 boot();
