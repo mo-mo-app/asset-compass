@@ -5,7 +5,8 @@
 .holding-cost-calculated[hidden]{display:none}
 .form-validation-error{color:var(--red);font-size:11px;min-height:1em;margin-top:-7px;white-space:pre-line}
 #holding-form input[data-cleared="true"]{background:#fff0f3;border-color:#e4c5cc}
-#holding-form input[data-invalid="true"]{background:#fff0f3;border-color:#e4aab5}
+#holding-form input[data-invalid="true"]{background:#fff0f3;border-color:var(--red);box-shadow:0 0 0 1px var(--red)}
+#holding-form input[data-invalid="true"]:focus{outline:2px solid var(--red);outline-offset:1px}
 .holding-pc-quantity,.holding-meta-type{display:none}
 #holdings-view .holdings-account-heading{margin:22px 0 0;padding-bottom:9px;border-bottom:1px solid var(--line);font-size:16px;letter-spacing:-.03em}
 #holdings-view .table-head + .holdings-account-heading{margin-top:12px}
@@ -659,4 +660,58 @@
 }
 @media(max-width:600px){
   #holding-input-error{white-space:normal}
+}
+
+/* Classification editing stays within the existing scrollable holding dialog. */
+@media(min-width:601px){#holding-dialog{max-height:calc(100dvh - 30px);overflow-y:auto}}
+.holding-advanced-settings{border-top:1px solid var(--line);margin-top:20px;padding-top:10px;min-width:0}
+.holding-advanced-settings>summary{cursor:pointer;font-size:13px;font-weight:600;min-height:44px;line-height:20px;padding:12px 0}
+.holding-advanced-settings>summary:focus-visible{outline:2px solid var(--teal);outline-offset:3px;border-radius:3px}
+.holding-classifications{padding-top:12px;min-width:0}
+.holding-classifications h3{font-size:14px;margin:0 0 8px}
+.classification-note{font-size:11px;color:var(--muted);line-height:1.7;margin-bottom:15px}
+.classification-field{min-width:0;margin-bottom:16px}
+.classification-field[hidden]{display:none}
+.dialog-card .classification-field label{margin-bottom:7px}
+.classification-field input,.classification-field select{width:100%;min-width:0;max-width:100%;margin-top:0}
+.classification-status{font-size:11px;line-height:1.7;margin-top:7px;overflow-wrap:anywhere}
+.classification-status[data-source="user"]{color:var(--teal);font-weight:600}
+.classification-field small{line-height:1.7;overflow-wrap:anywhere}
+.classification-reset{padding:8px 0;text-align:left;min-height:36px}
+.classification-reset:disabled{color:var(--muted);cursor:default}
+@media(max-width:600px){
+  .classification-reset{min-height:44px}
+}
+
+html[data-environment="preview"] .sidebar{background:#2b203d}
+html[data-environment="preview"] .sidebar nav .nav-item.active,
+html[data-environment="preview"] .sidebar nav .nav-item:hover{background:#49365f}
+html[data-environment="preview"] .sidebar .sidebar-foot{border-color:#514164}
+html[data-environment="preview"] .sidebar .brand-mark{--brand-ring:#c2a0f4;--brand-mint:#c2a0f4;--brand-center:#2b203d}
+.preview-badge{display:none;align-items:center;justify-content:center;border:1px solid #8f70ba;border-radius:999px;background:#49365f;color:#f2eafa;font:600 9px/1 "DM Mono",monospace;letter-spacing:1.1px;white-space:nowrap}
+html[data-environment="preview"] .sidebar-preview-badge{display:inline-flex;width:max-content;margin:0 10px 15px;padding:6px 9px}
+
+.holding-classification-pills{display:flex;flex-wrap:wrap;align-items:center;gap:4px;min-width:0;margin-top:6px}
+.classification-pill{display:inline-flex;align-items:center;max-width:100%;border:1px solid;border-radius:999px;padding:2px 7px;font-size:10px;font-weight:600;line-height:1.4;white-space:nowrap}
+.classification-pill--sector{color:#765400;background:#fff7d6;border-color:#e8ca67}
+.classification-pill--sensitivity{color:#075c75;background:#e4f7fc;border-color:#82d3e8}
+.classification-pill--fund-category{color:#82334f;background:#fff0f5;border-color:#e7a9bf}
+#holdings-view .holding-identity{display:flex;flex-direction:column;align-items:stretch;min-width:0}
+#holdings-view .holding-name{order:0}
+#holdings-view .holding-meta-line{display:contents}
+#holdings-view .holding-meta{order:1}
+#holdings-view .holding-classification-pills{order:2}
+#holdings-view .holding-updated{order:3}
+@media(max-width:600px){
+  #holdings-view .holding-identity{display:grid}
+  #holdings-view .holding-meta-line{grid-column:1 / -1;display:flex;flex-wrap:wrap;align-items:baseline;gap:0 8px;min-width:0}
+  #holdings-view .holding-meta{flex:1 1 auto;min-width:0;white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:anywhere}
+  #holdings-view .holding-updated{flex:0 0 auto;margin:0 0 0 auto;text-align:right;white-space:nowrap}
+  #holdings-view .holding-classification-pills{grid-column:1 / -1}
+  #holdings-view .classification-pill{font-size:10px}
+  html[data-environment="preview"] .mobile-brand{background:#2b203d}
+  html[data-environment="preview"] .mobile-brand .brand-mark{--brand-ring:#c2a0f4;--brand-mint:#c2a0f4;--brand-center:#2b203d}
+  html[data-environment="preview"] .mobile-bottom-nav{background:#2b203d;border-color:#514164}
+  html[data-environment="preview"] .mobile-bottom-nav .nav-item.active{background:#49365f}
+  html[data-environment="preview"] .mobile-preview-badge{display:inline-flex;margin-left:2px;padding:6px 8px;font-size:8px}
 }

@@ -114,7 +114,7 @@ test("all master codes persist through the existing SQLite schema and API state 
         for (const key of Object.keys(expected).filter(k => k.endsWith('_code'))) assert.equal(actual[key], expected[key]);
       }
       assert.deepEqual(getState(), saved);
-      assert.equal(db.prepare('PRAGMA user_version').get().user_version, 5);
+      assert.equal(db.prepare('PRAGMA user_version').get().user_version, 6);
     } finally { db.close(); }
   `], { cwd: path.resolve(__dirname, ".."), env: { ...process.env, ASSET_COMPASS_DB_PATH: path.join(folder, "test.sqlite") } });
   assert.equal(result.status, 0, result.stderr.toString());

@@ -51,6 +51,8 @@ function appContext() {
   });
   vm.runInContext(fs.readFileSync(path.join(root, "symbols.js"), "utf8"), context);
   vm.runInContext(fs.readFileSync(path.join(root, "holding-number-rules.js"), "utf8"), context);
+  vm.runInContext(fs.readFileSync(path.join(root, "classification-masters.js"), "utf8"), context);
+  vm.runInContext(fs.readFileSync(path.join(root, "classification-display.js"), "utf8"), context);
   const source = fs.readFileSync(path.join(root, "app.js"), "utf8");
   vm.runInContext(source.slice(0, source.indexOf('document.addEventListener("click"')), context);
   return { context, element };
@@ -90,23 +92,32 @@ function assertCleared(element) {
   assert.equal(element("#holding-cost").value, "");
   assert.match(element("#holding-input-error").textContent,/クリア/);
 }
+function assertAssetCategoryInputsCleared(element) {
+  assert.equal(element("#holding-name").value, "");
+  assert.equal(element("#holding-symbol").value, "");
+  assertCleared(element);
+}
 
 test("normal fund and iDeCo changes clear quantity and cost instead of converting, for new and existing holdings", () => {
   for (const existing of [false,true]) for (const category of ["specified","ideco"]) {
-    const {element} = prepare({existing,category});
+    const {element,state} = prepare({existing,category});
+    const savedBefore = state();
     element("#holding-account-category").value = category === "ideco" ? "specified" : "ideco";
     element("#holding-account-category").eventHandlers.change();
-    assertCleared(element);
+    assertAssetCategoryInputsCleared(element);
     assert.equal(element("#holding-type").value,"投資信託");
+    assert.deepEqual(state(), savedBefore, "unsubmitted edit must not modify the saved holding");
   }
 });
-test("all asset type transitions clear quantity and cost in new and edit forms", () => {
+test("all asset type transitions clear the name, code, quantity and cost in new and edit forms", () => {
   for (const existing of [false,true]) for (const from of ["日本株","米国株","投資信託"]) for (const to of ["日本株","米国株","投資信託"]) {
     if (from===to) continue;
-    const {element} = prepare({existing,type:from});
+    const {element,state} = prepare({existing,type:from});
+    const savedBefore = state();
     element("#holding-type").value=to;
     element("#holding-type").eventHandlers.change();
-    assertCleared(element);
+    assertAssetCategoryInputsCleared(element);
+    assert.deepEqual(state(), savedBefore, "unsubmitted edit must not modify the saved holding");
   }
 });
 test("broker-only and non-iDeCo category changes retain numeric inputs", () => {

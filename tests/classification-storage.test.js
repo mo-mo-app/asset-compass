@@ -85,7 +85,7 @@ test("automatic classification persists three auto fields while preserving user 
   run(folder, `
     const expected = JSON.parse(fs.readFileSync(require('node:path').join(require('node:path').dirname(storage.databasePath), 'expected.json')));
     assert.deepEqual(JSON.parse(JSON.stringify(storage.getState())), expected);
-    assert.equal(storage.db.prepare('PRAGMA user_version').get().user_version, 5);
+    assert.equal(storage.db.prepare('PRAGMA user_version').get().user_version, 6);
   `);
 });
 
@@ -180,5 +180,21 @@ test("automatic storage rejects user/fund fields, nulls and malformed codes and 
     assert.throws(() => storage.saveAutomaticClassification('nvda', before.revision, {auto_sector_code:'ENERGY'}), /fixture rollback/);
     assert.deepEqual(storage.getState(), before);
     storage.db.exec('DROP TRIGGER reject_classification_revision');
+  `);
+});
+
+test("normal refresh fills only missing automatic fields even when provider values differ", t => {
+  run(temp(t), `
+    sample.holdings[0].auto_sector_code = 'FINANCIALS';
+    sample.holdings[0].auto_sensitivity_code = 'DEFENSIVE';
+    storage.migrateLocalState(sample);
+    const before = storage.getState();
+    const result = await refreshClassification('nvda', { ...options, repository: storage });
+    assert.equal(result.status, 'updated');
+    assert.deepEqual(result.updatedFields, ['auto_industry_code']);
+    const after = storage.getState();
+    assert.deepEqual(after.data.holdings[0], { ...before.data.holdings[0], auto_industry_code: 'SEMICONDUCTORS' });
+    assert.equal((await refreshClassification('nvda', { ...options, repository: storage,
+      fetchImpl: async () => assert.fail('complete auto must not fetch') })).reason, 'already_classified');
   `);
 });

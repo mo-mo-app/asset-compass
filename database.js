@@ -3,6 +3,7 @@ const path = require("node:path");
 const { DatabaseSync } = require("node:sqlite");
 const { normalizeStoredSymbol, sameHoldingSlot } = require("./symbols");
 const HoldingNumberRules = require("./holding-number-rules");
+const { assertEditableClassification } = require("./classification-editor");
 const classificationFields = [
   "auto_sector_code", "user_sector_code",
   "auto_industry_code", "user_industry_code",
@@ -18,7 +19,7 @@ db.exec("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA busy_timeou
 
 function runMigrations() {
   const currentVersion = db.prepare("PRAGMA user_version").get().user_version;
-  if (currentVersion > 5) throw new Error(`Database schema version ${currentVersion} is newer than this application supports.`);
+  if (currentVersion > 6) throw new Error(`Database schema version ${currentVersion} is newer than this application supports.`);
 
   if (currentVersion === 0) {
     db.exec("BEGIN IMMEDIATE");
@@ -222,9 +223,28 @@ function runMigrations() {
       throw error;
     }
   }
+  if (db.prepare("PRAGMA user_version").get().user_version < 6) {
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      db.exec(`
+        ALTER TABLE holdings ADD COLUMN instrument_kind TEXT
+          CHECK (instrument_kind IS NULL OR (type IN ('日本株', '米国株') AND instrument_kind IN ('STOCK', 'ETF')));
+        PRAGMA user_version = 6;
+        COMMIT;
+      `);
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
+  }
 }
 
 runMigrations();
+
+function holdingIdentityChanged(holding, previous) {
+  return Boolean(previous && (holding.type !== previous.type ||
+    normalizeStoredSymbol(holding.type, holding.symbol).toUpperCase() !== normalizeStoredSymbol(previous.type, previous.symbol).toUpperCase()));
+}
 
 function classificationCodes(holding, previous, fieldName) {
   return Object.fromEntries(classificationFields.map(field => {
@@ -314,14 +334,27 @@ function normalizeState(input, existingCategories = new Map(), existingHoldings 
       : typeof holding.priceDate === "string" && /^\d{1,2}\/\d{1,2}$/.test(holding.priceDate)
         ? holding.priceDate
         : (() => { throw new Error(`${field}.priceDate must use M/D format or be null.`); })();
+    const previous = existingHoldings?.get(id);
+    const identityChanged = holdingIdentityChanged({ ...holding, type }, previous);
+    const instrumentKind = Object.hasOwn(holding, "instrument_kind")
+      ? holding.instrument_kind
+      : identityChanged ? null : previous?.instrument_kind ?? null;
+    if (instrumentKind !== null && !["STOCK", "ETF"].includes(instrumentKind)) {
+      throw new Error(`${field}.instrument_kind must be STOCK, ETF or null.`);
+    }
+    if (type === "投資信託" && instrumentKind !== null) {
+      throw new Error(`${field}.instrument_kind must be null for mutual funds.`);
+    }
     return {
       id, accountId, accountCategoryCode, type, currency,
+      instrument_kind: instrumentKind,
       name: requiredText(holding?.name, `${field}.name`),
       symbol: requiredText(normalizeStoredSymbol(type, requiredText(holding?.symbol, `${field}.symbol`)), `${field}.symbol`),
       quantity: holding.quantity, cost: holding.cost, price, previousClose, quoteStatus, quoteAttemptedAt,
       priceTimestamp: optionalTimestamp(holding.priceTimestamp, `${field}.priceTimestamp`),
       priceDate,
-      ...classificationCodes(holding, existingHoldings?.get(id), field)
+      // Codes omitted by the editor belong to the previous company only while identity is unchanged.
+      ...classificationCodes(holding, identityChanged ? null : previous, field)
     };
   });
   if (new Set(holdings.map(holding => holding.id)).size !== holdings.length) throw new Error("Holding IDs must be unique.");
@@ -342,13 +375,14 @@ function upsertState(data) {
     ON CONFLICT(id) DO UPDATE SET name = excluded.name, note = excluded.note, updated_at = excluded.updated_at
   `);
   const upsertHolding = db.prepare(`
-    INSERT INTO holdings (id, account_id, account_category_code, type, currency, name, symbol, quantity, cost, created_at, updated_at, quote_status, quote_attempted_at, ${classificationFields.join(", ")})
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${classificationFields.map(() => "?").join(", ")})
+    INSERT INTO holdings (id, account_id, account_category_code, type, currency, name, symbol, quantity, cost, created_at, updated_at, quote_status, quote_attempted_at, instrument_kind, ${classificationFields.join(", ")})
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${classificationFields.map(() => "?").join(", ")})
     ON CONFLICT(id) DO UPDATE SET account_id = excluded.account_id, type = excluded.type,
       account_category_code = excluded.account_category_code, currency = excluded.currency,
       name = excluded.name, symbol = excluded.symbol,
       quantity = excluded.quantity, cost = excluded.cost, updated_at = excluded.updated_at,
       quote_status = excluded.quote_status, quote_attempted_at = excluded.quote_attempted_at,
+      instrument_kind = excluded.instrument_kind,
       ${classificationFields.map(field => `${field} = excluded.${field}`).join(", ")}
   `);
   const upsertQuote = db.prepare(`
@@ -360,7 +394,7 @@ function upsertState(data) {
 
   for (const account of data.accounts) upsertAccount.run(account.id, account.name, account.note, now, now);
   for (const holding of data.holdings) {
-    upsertHolding.run(holding.id, holding.accountId, holding.accountCategoryCode, holding.type, holding.currency, holding.name, holding.symbol, holding.quantity, holding.cost, now, now, holding.quoteStatus, holding.quoteAttemptedAt, ...classificationFields.map(field => holding[field]));
+    upsertHolding.run(holding.id, holding.accountId, holding.accountCategoryCode, holding.type, holding.currency, holding.name, holding.symbol, holding.quantity, holding.cost, now, now, holding.quoteStatus, holding.quoteAttemptedAt, holding.instrument_kind, ...classificationFields.map(field => holding[field]));
     if (holding.price !== null) upsertQuote.run(holding.id, holding.price, holding.previousClose, holding.priceTimestamp, holding.priceDate);
     else db.prepare("DELETE FROM holding_quotes WHERE holding_id = ?").run(holding.id);
   }
@@ -383,7 +417,7 @@ function getState() {
   `).all();
   const holdings = db.prepare(`
     SELECT h.id, h.account_id, h.account_category_code, h.type, h.currency, h.name, h.symbol, h.quantity, h.cost,
-      q.price, q.previous_close, q.price_timestamp, q.price_date, h.quote_status, h.quote_attempted_at,
+      q.price, q.previous_close, q.price_timestamp, q.price_date, h.quote_status, h.quote_attempted_at, h.instrument_kind,
       ${classificationFields.map(field => `h.${field}`).join(", ")}
     FROM holdings h LEFT JOIN holding_quotes q ON q.holding_id = h.id ORDER BY h.rowid
   `).all().map(row => ({
@@ -392,6 +426,7 @@ function getState() {
     price: row.price ?? null, previousClose: row.previous_close ?? null,
     priceTimestamp: row.price_timestamp ?? null, priceDate: row.price_date ?? null,
     quoteStatus: row.quote_status, quoteAttemptedAt: row.quote_attempted_at ?? null,
+    instrument_kind: row.instrument_kind ?? null,
     ...Object.fromEntries(classificationFields.map(field => [field, row[field] ?? null]))
   }));
   const fx = db.prepare("SELECT rate, price_timestamp FROM fx_rates WHERE base_currency = 'USD' AND quote_currency = 'JPY'").get();
@@ -554,11 +589,16 @@ function saveState(expectedRevision, input, snapshotMetadata = null) {
     if (current.revision !== expectedRevision) return { conflict: true, state: getState() };
     const existingHoldings = db.prepare(`
       SELECT id, account_id AS accountId, account_category_code AS accountCategoryCode, type, currency, symbol, quantity, cost,
-        ${classificationFields.join(", ")} FROM holdings
+        instrument_kind, ${classificationFields.join(", ")} FROM holdings
     `).all();
     const existingCategories = new Map(existingHoldings.map(row => [row.id, row.accountCategoryCode]));
     const existingById = new Map(existingHoldings.map(holding => [holding.id, { ...holding, symbol: normalizeStoredSymbol(holding.type, holding.symbol).toUpperCase() }]));
     const data = normalizeState(input, existingCategories, existingById);
+    for (const holding of data.holdings) {
+      const previous = existingById.get(holding.id);
+      // A new identity starts without automatic values; clients still cannot inject auto codes.
+      assertEditableClassification(holding, holdingIdentityChanged(holding, previous) ? {} : previous);
+    }
     const submittedIds = new Set(data.holdings.map(holding => holding.id));
     const effectiveHoldings = data.holdings.concat(existingHoldings.filter(holding => !submittedIds.has(holding.id)));
     for (const holding of data.holdings) {

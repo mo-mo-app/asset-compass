@@ -96,7 +96,7 @@ test("holding form locks investments only for the iDeCo account category", () =>
   assert.equal(context.isIdecoCategory("ideco"), true);
   assert.equal(element("#holding-type").disabled, true);
   assert.equal(element("#holding-type").value, "投資信託");
-  assert.equal(element("#holding-symbol-label").textContent, "投信コード");
+  assert.equal(element("#holding-symbol-label").textContent, "投信コード *");
   assert.equal(element("#holding-symbol").placeholder, "例：9I311181");
 });
 
@@ -108,7 +108,8 @@ test("iDeCo acquisition amount calculates the displayed 10,000-unit acquisition 
   element("#holding-cost").value = "273,948";
   context.updateHoldingFormLabels();
 
-  assert.equal(element("#cost-label").textContent, "取得金額（円）");
+  assert.equal(element("#cost-label").textContent, "取得金額（円） *");
+  assert.equal(element("#holding-symbol-label").textContent, "投信コード *");
   assert.equal(element("#holding-cost").placeholder, "例：273948");
   assert.equal(context.calculateIdecoAcquisitionUnitCost(163067, 273948), 273948 / 163067 * 10000);
   assert.equal(element("#holding-cost-calculated").textContent, "取得単価（自動計算）：16,799.72円");

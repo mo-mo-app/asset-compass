@@ -136,7 +136,9 @@ https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?range=1mo&interval=1d
 - drillrキーはサーバー環境の`DRILLR_API_KEY`からヘッダーへ設定します。秘密情報をブラウザー・ログ・レスポンスへ渡さず、外部リダイレクトも許可しません。
 - `database.js`の`saveAutomaticClassification`は3つのauto列のみを更新します。ユーザー値は変更せず、参照時は既存の`getEffectiveCode`でuserを優先します。外部値は内部セクターコードへ正規化し、業種コードは取得元依存です。
 - API失敗・未知値・解析失敗では既存auto値を保持します。取得前後のrevisionが異なる場合も保存しません。
-- このサービスは既存の価格更新・保有編集・HTTPルート・UIには組み込んでいません。定期更新や投信・ETFのカテゴリ自動分類も未実装です。呼び出し頻度とUI連携は次段階で決めます。
+- 保有保存（既存の`PUT /api/v1/state`）成功後、対象銘柄のauto値に未設定があれば、別リクエストの`POST /api/v1/holdings/:id/classification`から`refreshClassification`を呼び出します。通常実行は空のauto項目だけを補完し、サーバー側の明示的な`force: true`は従来の再分類動作を維持します。対象外資産は既存条件でスキップします。
+- 分類APIは結果と最新stateを返し、画面はstate・revision・キャッシュを反映します。分類保存のrevision競合は409で返し、API失敗・タイムアウトを含めて先に成功した保有保存は取り消しません。遅延レスポンスは新しい保存や編集中のローカルstateを上書きしません。
+- 分類編集UIは既存の`classification-editor.js`を再利用します。変更のないフォームは最新stateで`open()`し直してから閉じ、再び編集を開いた場合も最新auto値を表示します。待機中の入力変更や別セッションのダイアログには反映せず、入力内容を維持します。価格更新・定期更新・投信／ETFカテゴリの自動分類は追加していません。
 
 保存・正規化の詳細は[data-design.md](data-design.md)を参照してください。
 
