@@ -66,7 +66,7 @@ test('automatic results retain manual priority; reset previews and saves null us
   assert.equal(ui.rows.get('sector').input.value, 'FINANCIALS');
   assert.equal(ui.rows.get('sensitivity').input.value, 'DEFENSIVE');
   assert.equal(ui.rows.get('industry').input.value, 'SEMICONDUCTORS');
-  assert.match(ui.rows.get('sector').auto.textContent, /情報技術/);
+  assert.equal(ui.rows.get('sector').auto, null);
   ui.reset();
   assert.equal(ui.rows.get('sector').input.value, auto.auto_sector_code);
   assert.equal(ui.rows.get('sensitivity').input.value, auto.auto_sensitivity_code);
@@ -166,4 +166,18 @@ test('failure to fetch latest state after classification failure preserves the c
   assert.equal(ui.state()[0].name, '保存済み');
   assert.equal(vm.runInContext('serverRevision', ui.context), 2);
   assert.match(ui.element('#sync-message').textContent, /銘柄は保存しました/);
+});
+
+test('advanced classification settings begin closed and close again when another edit session opens', () => {
+  const ui = setup();
+  const advanced = ui.element('#holding-advanced-settings');
+  assert.equal(advanced.open, false);
+  advanced.open = true;
+  ui.element('#holding-dialog').close();
+  ui.context.openHolding('holding-1');
+  assert.equal(advanced.open, false);
+  advanced.open = true;
+  ui.element('#holding-dialog').close();
+  ui.context.openHolding('');
+  assert.equal(advanced.open, false);
 });

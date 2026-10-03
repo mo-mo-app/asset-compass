@@ -7,7 +7,7 @@ function element() {
 }
 function editorRoot() {
   const rows = new Map(editor.fields.map(field => {
-    const controls = { input: element(), status: element(), auto: element(), reset: element() };
+    const controls = { input: element(), status: field.kind === "fundCategory" ? element() : null, auto: field.kind === "fundCategory" ? element() : null, reset: element() };
     const row = { hidden: false, querySelector(selector) { return controls[{
       "input, select": "input", ".classification-status": "status", ".classification-auto": "auto", ".classification-reset": "reset"
     }[selector]]; } };

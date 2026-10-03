@@ -15,7 +15,7 @@ function element() {
 }
 function editorRoot() {
   const rows = new Map(editor.fields.map(field => {
-    const controls = { input: element(), status: element(), auto: element(), reset: element() };
+    const controls = { input: element(), status: field.kind === "fundCategory" ? element() : null, auto: field.kind === "fundCategory" ? element() : null, reset: element() };
     const row = { hidden: false, querySelector(selector) { return controls[{
       "input, select": "input", ".classification-status": "status", ".classification-auto": "auto", ".classification-reset": "reset"
     }[selector]]; } };
@@ -31,13 +31,13 @@ function editorRoot() {
 const stock = { type: "米国株", auto_sector_code: "INFORMATION_TECHNOLOGY", auto_industry_code: "SEMICONDUCTORS",
   auto_sensitivity_code: "CYCLICAL", user_sector_code: "FINANCIALS", user_industry_code: "USER_INDUSTRY", user_sensitivity_code: "DEFENSIVE" };
 
-test("editor shows user priority and explicit automatic/user values without creating overrides on open", () => {
+test("editor shows user priority without duplicate classification descriptions or overrides on open", () => {
   const { root, rows } = editorRoot(), ui = editor.createEditor(root);
   const before = structuredClone(stock);
   ui.open(stock, stock.type);
   assert.equal(rows.get("sector").input.value, "FINANCIALS");
-  assert.match(rows.get("sector").status.textContent, /金融（ユーザー設定）/);
-  assert.match(rows.get("sector").auto.textContent, /自動値：情報技術.*ユーザー値：金融/);
+  assert.doesNotMatch(root.innerHTML, /classification-(sector|industry|sensitivity)-status/);
+  assert.equal(rows.get("sector").auto, null);
   assert.equal(rows.get("industry").input.value, "USER_INDUSTRY");
   assert.equal(rows.get("sensitivity").input.value, "DEFENSIVE");
   assert.deepEqual(ui.getPatch(), {});
@@ -57,7 +57,6 @@ test("select/input edits produce only user fields, and each reset restores the a
   for (const field of editor.fields.filter(field => field.group !== "fund")) {
     const node = rows.get(field.kind);
     assert.equal(node.input.value, stock[field.auto]);
-    assert.equal(node.status.dataset.source, "auto");
     assert.equal(node.reset.disabled, true);
   }
   ui.open({ type: "投資信託", auto_fund_category_code: "BROAD_INDEX", user_fund_category_code: "HIGH_DIVIDEND" }, "投資信託");
@@ -79,7 +78,8 @@ test("stock, fund and existing ETF category codes select the applicable fields w
     assert.equal(rows.get("industry").input.disabled, fund);
     assert.equal(rows.get("fundCategory").row.hidden, !fund);
     assert.equal(rows.get("sensitivity").row.hidden, false);
-    assert.match(help.textContent, type === "日本株" ? /東証33業種/ : /取得元/);
+    assert.match(help.textContent, type === "日本株" ? /東証33業種/ : /空欄で自動分類/);
+    assert.doesNotMatch(help.textContent, /米国株は取得元/);
   }
   assert.doesNotMatch(root.innerHTML, /holding-classification-kind/);
   ui.open(stock, "米国株");
@@ -94,7 +94,7 @@ test("unknown existing codes remain visible and unchanged; new invalid edits are
   const { root, rows } = editorRoot(), ui = editor.createEditor(root);
   ui.open({ ...stock, user_sector_code: "legacy_sector" }, "米国株");
   assert.equal(rows.get("sector").input.value, "legacy_sector");
-  assert.match(rows.get("sector").status.textContent, /legacy_sector/);
+  assert.ok(rows.get("sector").input.options.some(option => option.value === "legacy_sector"));
   assert.deepEqual(ui.getPatch(), {});
   rows.get("sector").input.value = "not_a_sector"; rows.get("sector").input.fire("change");
   assert.throws(() => ui.getPatch(), /不正/);
@@ -168,4 +168,33 @@ test("holding form submit merges only editor user patch, keeps automatic codes, 
   assert.equal(el("#holding-dialog").closed, false);
   assert.match(context.errorMessage, /不正/);
   assert.equal(masters.getEffectiveCode(saved, "sector"), "ENERGY");
+});
+
+test("new stock classification defaults to automatic selects and an empty industry with an automatic placeholder", () => {
+  const { root, rows } = editorRoot(), ui = editor.createEditor(root);
+  for (const type of ['米国株', '日本株']) {
+    ui.open(null, type);
+    for (const kind of ['sector', 'sensitivity']) {
+      assert.equal(rows.get(kind).input.value, '');
+      assert.equal(rows.get(kind).input.options[0].textContent, '自動分類を使用');
+      assert.equal(rows.get(kind).input.options[0].value, '');
+    }
+    assert.equal(rows.get('industry').input.value, '');
+    assert.match(root.innerHTML, /id="classification-industry" placeholder="自動分類を使用"/);
+    assert.deepEqual(ui.getPatch(), {});
+  }
+});
+
+test("reopening selects user then auto then automatic-use fallback for each stock classification field", () => {
+  const { rows, root } = editorRoot(), ui = editor.createEditor(root);
+  for (const fields of [stock, { ...stock, user_sector_code: null, user_industry_code: null, user_sensitivity_code: null },
+    { type: '米国株', user_sector_code: null, auto_sector_code: null, user_industry_code: null, auto_industry_code: null }]) {
+    const before = structuredClone(fields);
+    ui.open(fields, '米国株');
+    for (const field of editor.fields.filter(field => field.group !== 'fund')) {
+      assert.equal(rows.get(field.kind).input.value, fields[field.user] ?? fields[field.auto] ?? '');
+    }
+    assert.deepEqual(ui.getPatch(), {});
+    assert.deepEqual(fields, before);
+  }
 });
